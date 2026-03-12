@@ -1,0 +1,23 @@
+{
+  "name": "ade-dev",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agent-First Development Environment monorepo",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "find . -name '*.tsbuildinfo' -delete && find . -name 'dist' -type d -prune -exec rm -rf {} +",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
