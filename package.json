@@ -9,11 +9,14 @@
   "scripts": {
     "build": "tsc -b",
     "clean": "find . -name '*.tsbuildinfo' -delete && find . -name 'dist' -type d -prune -exec rm -rf {} +",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "runtime:start": "node packages/runtime-service/dist/index.js"
   },
   "devDependencies": {
+    "@types/node": "^22.13.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.5.14",
     "typescript": "^5.7.2"
   },
   "dependencies": {

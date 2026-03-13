@@ -223,8 +223,9 @@ Phase 1 foundation is implemented in this repository as a TypeScript monorepo:
 - `packages/types`: domain model and event contracts.
 - `packages/orchestrator-core`: state machine, scheduler, approval engine, messaging bus, orchestrator service.
 - `packages/event-store`: event append/query adapter (in-memory MVP).
+- `packages/runtime-service`: HTTP/WebSocket runtime API for live snapshots and approvals.
 - `packages/command-center-ui`: command-center prototype with Mission Grid, Relationship Graph, Intervention Rail, and multi-chat view.
-- `docs`: architecture, domain model, event schema, and approval workflow docs.
+- `docs`: architecture, domain model, event schema, approval workflow, and runtime API docs.
 
 ### Chosen Operating Defaults
 
@@ -245,3 +246,7 @@ Phase 1 foundation is implemented in this repository as a TypeScript monorepo:
 3. Build all packages
 
   `npm run build`
+
+4. Start runtime service (for live UI data + approval actions)
+
+  `npm run runtime:start`

@@ -19,6 +19,7 @@ interface EventSink {
 export class OrchestratorService {
   private readonly agents = new Map<string, Agent>();
   private readonly workflows = new Map<string, WorkflowExecution>();
+  private readonly approvalRequests = new Map<string, ApprovalRequest>();
   private readonly stateMachine = new AgentStateMachine();
   private readonly scheduler = new DependencyGraphScheduler();
   private readonly approvals = new ApprovalEngine();
@@ -73,8 +74,44 @@ export class OrchestratorService {
       requiredSigners: decision.decision === "requires_multi_approval" ? ["manager", "security"] : ["manager"]
     };
 
+    this.approvalRequests.set(request.id, request);
+
     this.emit("approval.requested", request.id, "approval", { request });
     return request;
+  }
+
+  resolveApproval(approvalId: string, resolution: "approved" | "rejected", signerId: string): ApprovalRequest {
+    const request = this.approvalRequests.get(approvalId);
+    if (!request) {
+      throw new Error(`Approval request not found: ${approvalId}`);
+    }
+    if (this.approvals.isResolved(request)) {
+      return request;
+    }
+
+    request.status = resolution;
+    request.resolvedAt = new Date().toISOString();
+
+    this.emit("approval.resolved", request.id, "approval", {
+      approvalId,
+      status: request.status,
+      signerId,
+      resolvedAt: request.resolvedAt
+    });
+
+    return request;
+  }
+
+  listAgents(): Agent[] {
+    return [...this.agents.values()];
+  }
+
+  listWorkflows(): WorkflowExecution[] {
+    return [...this.workflows.values()];
+  }
+
+  listApprovals(): ApprovalRequest[] {
+    return [...this.approvalRequests.values()];
   }
 
   startWorkflow(definition: WorkflowDefinition): WorkflowExecution {

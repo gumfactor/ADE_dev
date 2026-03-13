@@ -1,0 +1,17 @@
+{
+  "name": "@ade/runtime-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@ade/event-store": "0.1.0",
+    "@ade/orchestrator-core": "0.1.0",
+    "@ade/types": "0.1.0",
+    "ws": "^8.18.0"
+  }
+}

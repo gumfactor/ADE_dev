@@ -4,6 +4,7 @@
     { "path": "./packages/types" },
     { "path": "./packages/orchestrator-core" },
     { "path": "./packages/event-store" },
-    { "path": "./packages/command-center-ui" }
+    { "path": "./packages/command-center-ui" },
+    { "path": "./packages/runtime-service" }
   ]
 }

@@ -5,7 +5,7 @@ import { RelationshipGraph } from "../components/RelationshipGraph.js";
 import { useOrchestratorState } from "../hooks/useOrchestratorState.js";
 
 export function CommandCenterLayout(): JSX.Element {
-  const { agents, approvals, relationships, chats } = useOrchestratorState();
+  const { agents, approvals, relationships, chats, loading, error, resolveApproval } = useOrchestratorState();
 
   return (
     <main
@@ -23,11 +23,19 @@ export function CommandCenterLayout(): JSX.Element {
         <p style={{ margin: "6px 0 0", fontSize: 13, opacity: 0.85 }}>
           Manager-worker authority on top of a flexible DAG, with additive approvals and balanced optimization.
         </p>
+        <p style={{ margin: "6px 0 0", fontSize: 12, opacity: 0.8 }}>
+          {loading ? "Syncing runtime snapshot..." : error ?? "Live runtime connected"}
+        </p>
       </header>
 
       <section style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 14 }}>
         <MissionGrid agents={agents} />
-        <InterventionRail approvals={approvals} />
+        <InterventionRail
+          approvals={approvals}
+          onResolveApproval={(approvalId, resolution) => {
+            void resolveApproval(approvalId, resolution);
+          }}
+        />
       </section>
 
       <section style={{ display: "grid", gridTemplateColumns: "1.2fr 1.8fr", gap: 14 }}>

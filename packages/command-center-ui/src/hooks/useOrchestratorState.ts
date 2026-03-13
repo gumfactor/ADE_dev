@@ -1,159 +1,116 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Agent, AgentRelationship, ApprovalRequest, MessageEnvelope } from "@ade/types";
+import { mockAgents, mockApprovals, mockChats, mockRelationships } from "./mockState.js";
 
 export interface CommandCenterState {
   agents: Agent[];
   relationships: AgentRelationship[];
   approvals: ApprovalRequest[];
   chats: Record<string, MessageEnvelope[]>;
+  loading: boolean;
+  error?: string;
+  resolveApproval: (approvalId: string, resolution: "approved" | "rejected") => Promise<void>;
 }
 
+interface SnapshotPayload {
+  agents: Agent[];
+  relationships: AgentRelationship[];
+  approvals: ApprovalRequest[];
+  chats: Record<string, MessageEnvelope[]>;
+}
+
+const DEFAULT_RUNTIME_BASE_URL = "http://127.0.0.1:8787";
+
 export function useOrchestratorState(): CommandCenterState {
+  const [snapshot, setSnapshot] = useState<SnapshotPayload>({
+    agents: mockAgents,
+    relationships: mockRelationships,
+    approvals: mockApprovals,
+    chats: mockChats
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const resolveApproval = useCallback(async (approvalId: string, resolution: "approved" | "rejected") => {
+    const response = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/approvals/${approvalId}/resolve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ resolution, signerId: "manager" })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to resolve approval ${approvalId}`);
+    }
+
+    const fresh = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/snapshot`);
+    if (!fresh.ok) {
+      throw new Error("Failed to refresh snapshot after approval update");
+    }
+
+    const payload = (await fresh.json()) as SnapshotPayload;
+    setSnapshot(payload);
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let socket: WebSocket | undefined;
+
+    async function bootstrap(): Promise<void> {
+      try {
+        const response = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/snapshot`);
+        if (response.ok) {
+          const payload = (await response.json()) as SnapshotPayload;
+          if (!disposed) {
+            setSnapshot(payload);
+            setError(undefined);
+          }
+        } else if (!disposed) {
+          setError("Runtime service returned a non-OK response");
+        }
+      } catch {
+        if (!disposed) {
+          setError("Runtime service unavailable; using fallback data");
+        }
+      } finally {
+        if (!disposed) {
+          setLoading(false);
+        }
+      }
+
+      try {
+        socket = new WebSocket(`${DEFAULT_RUNTIME_BASE_URL.replace("http", "ws")}/ws`);
+        socket.onmessage = (event) => {
+          const packet = JSON.parse(event.data as string) as { snapshot?: SnapshotPayload };
+          if (!disposed && packet.snapshot) {
+            setSnapshot(packet.snapshot);
+            setError(undefined);
+          }
+        };
+      } catch {
+        if (!disposed) {
+          setError("Live stream unavailable; polling disabled");
+        }
+      }
+    }
+
+    void bootstrap();
+
+    return () => {
+      disposed = true;
+      socket?.close();
+    };
+  }, []);
+
   return useMemo(
     () => ({
-      agents: [
-        {
-          id: "agent-manager-01",
-          name: "Mission Manager",
-          role: "manager",
-          state: "executing",
-          peers: ["agent-reviewer-01"],
-          context: {
-            workspaceId: "ade-dev",
-            branch: "main",
-            objective: "Coordinate feature workflow"
-          },
-          budget: { tokenBudget: 180000, costBudgetUsd: 32, wallClockBudgetMs: 3_600_000 },
-          createdAt: new Date().toISOString(),
-          startedAt: new Date().toISOString(),
-          activeStep: "Routing implementation tasks to workers",
-          statusNote: "Balanced mode"
-        },
-        {
-          id: "agent-worker-impl-01",
-          name: "Implementer Alpha",
-          role: "worker",
-          state: "waiting_approval",
-          parentAgentId: "agent-manager-01",
-          peers: ["agent-worker-test-01"],
-          context: {
-            workspaceId: "ade-dev",
-            branch: "feature/agent-graph",
-            objective: "Build DAG route resolver"
-          },
-          budget: { tokenBudget: 80000, costBudgetUsd: 14, wallClockBudgetMs: 2_700_000 },
-          createdAt: new Date().toISOString(),
-          startedAt: new Date().toISOString(),
-          activeStep: "Requesting approval for repository-wide write",
-          statusNote: "Needs manager sign-off"
-        },
-        {
-          id: "agent-worker-test-01",
-          name: "Validator Sigma",
-          role: "validator",
-          parentAgentId: "agent-manager-01",
-          state: "executing",
-          peers: ["agent-worker-impl-01"],
-          context: {
-            workspaceId: "ade-dev",
-            branch: "feature/agent-graph",
-            objective: "Run regression validations"
-          },
-          budget: { tokenBudget: 50000, costBudgetUsd: 8, wallClockBudgetMs: 1_800_000 },
-          createdAt: new Date().toISOString(),
-          startedAt: new Date().toISOString(),
-          activeStep: "Evaluating policy edge cases",
-          statusNote: "2 warnings"
-        },
-        {
-          id: "agent-reviewer-01",
-          name: "Review Sentinel",
-          role: "reviewer",
-          state: "queued",
-          parentAgentId: "agent-manager-01",
-          peers: [],
-          context: {
-            workspaceId: "ade-dev",
-            branch: "feature/agent-graph",
-            objective: "Review output quality"
-          },
-          budget: { tokenBudget: 35000, costBudgetUsd: 4, wallClockBudgetMs: 900000 },
-          createdAt: new Date().toISOString(),
-          activeStep: "Waiting for test completion",
-          statusNote: "Queued by dependency"
-        }
-      ],
-      relationships: [
-        {
-          sourceAgentId: "agent-manager-01",
-          targetAgentId: "agent-worker-impl-01",
-          type: "manager_worker",
-          createdAt: new Date().toISOString()
-        },
-        {
-          sourceAgentId: "agent-manager-01",
-          targetAgentId: "agent-worker-test-01",
-          type: "manager_worker",
-          createdAt: new Date().toISOString()
-        },
-        {
-          sourceAgentId: "agent-worker-impl-01",
-          targetAgentId: "agent-worker-test-01",
-          type: "peer_specialist",
-          createdAt: new Date().toISOString()
-        },
-        {
-          sourceAgentId: "agent-manager-01",
-          targetAgentId: "agent-reviewer-01",
-          type: "manager_worker",
-          createdAt: new Date().toISOString()
-        }
-      ],
-      approvals: [
-        {
-          id: "approval-001",
-          agentId: "agent-worker-impl-01",
-          action: {
-            toolName: "filesystem.write",
-            parameters: { scope: "repo", files: 12 }
-          },
-          riskLevel: "high",
-          policyMatch: {
-            ruleId: "default.permissive.additive",
-            decision: "requires_approval",
-            riskScore: 27
-          },
-          status: "pending",
-          requestedAt: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-          requiredSigners: ["manager"]
-        }
-      ],
-      chats: {
-        "agent-manager-01": [
-          {
-            id: "msg-001",
-            from: "human",
-            to: ["agent-manager-01"],
-            intent: "request",
-            scope: "private",
-            payload: { text: "Keep velocity high, block only high-risk actions" },
-            sentAt: new Date().toISOString()
-          }
-        ],
-        "agent-worker-impl-01": [
-          {
-            id: "msg-002",
-            from: "agent-manager-01",
-            to: ["agent-worker-impl-01"],
-            intent: "delegate",
-            scope: "private",
-            payload: { text: "Implement dependency routing with audit events" },
-            sentAt: new Date().toISOString()
-          }
-        ]
-      }
+      agents: snapshot.agents,
+      relationships: snapshot.relationships,
+      approvals: snapshot.approvals,
+      chats: snapshot.chats,
+      loading,
+      error,
+      resolveApproval
     }),
-    []
+    [snapshot, loading, error, resolveApproval]
   );
 }
