@@ -19,6 +19,7 @@ interface EventSink {
 export class OrchestratorService {
   private readonly agents = new Map<string, Agent>();
   private readonly workflows = new Map<string, WorkflowExecution>();
+  private readonly workflowDefinitions = new Map<string, WorkflowDefinition>();
   private readonly approvalRequests = new Map<string, ApprovalRequest>();
   private readonly stateMachine = new AgentStateMachine();
   private readonly scheduler = new DependencyGraphScheduler();
@@ -119,12 +120,16 @@ export class OrchestratorService {
       id: `exec-${crypto.randomUUID()}`,
       workflowId: definition.id,
       status: "running",
-      stageAgentAssignments: {},
+      stageAgentAssignments: this.assignAgentsToStages(definition),
+      completedStageIds: [],
+      retryCountByStage: {},
       currentStageId: undefined,
       createdAt: new Date().toISOString(),
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
+      lastTransitionAt: new Date().toISOString()
     };
 
+    this.workflowDefinitions.set(definition.id, definition);
     this.workflows.set(execution.id, execution);
 
     const readyStages = this.scheduler.getReadyStageIds(definition.stages, new Set<string>());
@@ -138,12 +143,142 @@ export class OrchestratorService {
     return execution;
   }
 
+  tickWorkflow(executionId: string, forceFailCurrentStage = false): WorkflowExecution {
+    const execution = this.requireWorkflow(executionId);
+    const definition = this.requireWorkflowDefinition(execution.workflowId);
+    if (execution.status !== "running") {
+      return execution;
+    }
+
+    const completedSet = new Set<string>(execution.completedStageIds);
+    if (!execution.currentStageId) {
+      const readyStages = this.scheduler.getReadyStageIds(definition.stages, completedSet);
+      const nextStage = readyStages[0];
+
+      if (!nextStage) {
+        execution.status = "completed";
+        execution.completedAt = new Date().toISOString();
+        execution.lastTransitionAt = execution.completedAt;
+        this.emit("workflow.stage_advanced", execution.id, "workflow", {
+          workflowId: definition.id,
+          result: "completed"
+        });
+        return execution;
+      }
+
+      execution.currentStageId = nextStage;
+      execution.lastTransitionAt = new Date().toISOString();
+      this.emit("workflow.stage_advanced", execution.id, "workflow", {
+        workflowId: definition.id,
+        currentStageId: nextStage,
+        result: "advanced"
+      });
+      return execution;
+    }
+
+    const stageId = execution.currentStageId;
+
+    if (forceFailCurrentStage) {
+      const attempt = (execution.retryCountByStage[stageId] ?? 0) + 1;
+      execution.retryCountByStage[stageId] = attempt;
+      execution.lastTransitionAt = new Date().toISOString();
+
+      if (attempt <= definition.retryPolicy.maxRetries) {
+        this.emit("workflow.stage_advanced", execution.id, "workflow", {
+          workflowId: definition.id,
+          stageId,
+          result: "retrying",
+          attempt
+        });
+        return execution;
+      }
+
+      execution.status = "paused";
+      execution.escalationStageId = stageId;
+      this.emit("workflow.stage_advanced", execution.id, "workflow", {
+        workflowId: definition.id,
+        stageId,
+        result: "escalated",
+        escalateToRole: definition.escalationPolicy.escalateToRole
+      });
+      return execution;
+    }
+
+    completedSet.add(stageId);
+    execution.completedStageIds = [...completedSet];
+    execution.retryCountByStage[stageId] = 0;
+
+    const readyStages = this.scheduler.getReadyStageIds(definition.stages, completedSet);
+    const nextStage = readyStages[0];
+
+    if (!nextStage) {
+      execution.status = "completed";
+      execution.currentStageId = undefined;
+      execution.completedAt = new Date().toISOString();
+      execution.lastTransitionAt = execution.completedAt;
+      this.emit("workflow.stage_advanced", execution.id, "workflow", {
+        workflowId: definition.id,
+        completedStageId: stageId,
+        result: "completed"
+      });
+      return execution;
+    }
+
+    execution.currentStageId = nextStage;
+    execution.lastTransitionAt = new Date().toISOString();
+    this.emit("workflow.stage_advanced", execution.id, "workflow", {
+      workflowId: definition.id,
+      completedStageId: stageId,
+      currentStageId: nextStage,
+      result: "advanced"
+    });
+
+    return execution;
+  }
+
+  tickAllRunningWorkflows(): WorkflowExecution[] {
+    const updates: WorkflowExecution[] = [];
+    for (const execution of this.workflows.values()) {
+      if (execution.status === "running") {
+        updates.push(this.tickWorkflow(execution.id));
+      }
+    }
+    return updates;
+  }
+
   private requireAgent(agentId: string): Agent {
     const agent = this.agents.get(agentId);
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
     }
     return agent;
+  }
+
+  private requireWorkflow(executionId: string): WorkflowExecution {
+    const execution = this.workflows.get(executionId);
+    if (!execution) {
+      throw new Error(`Workflow execution not found: ${executionId}`);
+    }
+    return execution;
+  }
+
+  private requireWorkflowDefinition(workflowId: string): WorkflowDefinition {
+    const definition = this.workflowDefinitions.get(workflowId);
+    if (!definition) {
+      throw new Error(`Workflow definition not found: ${workflowId}`);
+    }
+    return definition;
+  }
+
+  private assignAgentsToStages(definition: WorkflowDefinition): Record<string, string> {
+    const assignments: Record<string, string> = {};
+    for (const stage of definition.stages) {
+      const assigned = [...this.agents.values()].find((agent) => agent.role === stage.requiredRole);
+      if (assigned) {
+        assignments[stage.id] = assigned.id;
+      }
+    }
+    return assignments;
   }
 
   private emit(

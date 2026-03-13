@@ -227,6 +227,13 @@ Phase 1 foundation is implemented in this repository as a TypeScript monorepo:
 - `packages/command-center-ui`: command-center prototype with Mission Grid, Relationship Graph, Intervention Rail, and multi-chat view.
 - `docs`: architecture, domain model, event schema, approval workflow, and runtime API docs.
 
+Workflow engine is now active in orchestrator runtime:
+
+- Stage progression for dependency-ready workflow stages.
+- Per-stage retry handling with retry-budget enforcement.
+- Escalation to configured role when retries are exhausted.
+- Runtime tick endpoints for deterministic progression/failure simulation.
+
 ### Chosen Operating Defaults
 
 - Relationship model: manager-worker hierarchy on top of a flexible DAG.

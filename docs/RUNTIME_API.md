@@ -41,8 +41,24 @@ Environment overrides:
     - `signerId`
   - Resolves a pending approval and emits event updates.
 
+- `POST /api/workflows/tick-all`
+  - Advances all running workflow executions by one stage step.
+
+- `POST /api/workflows/{executionId}/tick`
+  - Body:
+    - `forceFailCurrentStage` (boolean, optional)
+  - Advances one workflow execution by one stage step.
+  - When `forceFailCurrentStage` is true, stage retries are applied and escalation triggers after retry budget is exhausted.
+
 ## WebSocket
 
 - `GET /ws` (WebSocket upgrade)
   - Sends initial snapshot packet.
   - Broadcasts event packets with updated snapshot whenever new domain events are appended.
+
+## Workflow Engine Notes
+
+- Runtime auto-ticks workflows on an interval (`ADE_WORKFLOW_TICK_MS`, default 2500 ms).
+- Successful ticks move workflow to the next dependency-ready stage.
+- Failed ticks increment per-stage retry counters.
+- When retry limit is exceeded, workflow pauses and escalates to configured role.

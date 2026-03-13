@@ -53,6 +53,10 @@ export interface WorkflowExecution {
   status: WorkflowExecutionStatus;
   currentStageId?: string;
   stageAgentAssignments: Record<string, string>;
+  completedStageIds: string[];
+  retryCountByStage: Record<string, number>;
+  escalationStageId?: string;
+  lastTransitionAt?: string;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;

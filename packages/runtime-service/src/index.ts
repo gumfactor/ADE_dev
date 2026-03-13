@@ -8,6 +8,7 @@ import { seedAgents, seedMessages, seedRelationships, seedWorkflow } from "./see
 
 const HOST = process.env.ADE_RUNTIME_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.ADE_RUNTIME_PORT ?? 8787);
+const WORKFLOW_TICK_MS = Number(process.env.ADE_WORKFLOW_TICK_MS ?? 2500);
 
 const eventStore = new InMemoryEventStore();
 const projections = new RuntimeProjectionStore();
@@ -54,6 +55,10 @@ orchestrator.startWorkflow(seedWorkflow);
 orchestrator.evaluateApproval("filesystem.write", "repo");
 refreshProjections(orchestrator);
 
+setInterval(() => {
+  orchestrator.tickAllRunningWorkflows();
+}, WORKFLOW_TICK_MS);
+
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   const body = JSON.stringify(payload);
   res.writeHead(statusCode, {
@@ -91,6 +96,32 @@ const server = createServer(async (req, res) => {
   if (method === "GET" && url.pathname === "/api/snapshot") {
     sendJson(res, 200, projections.snapshot(eventStore.query({ limit: 500 })));
     return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/workflows/tick-all") {
+    const executions = orchestrator.tickAllRunningWorkflows();
+    refreshProjections(orchestrator);
+    sendJson(res, 200, { executions });
+    return;
+  }
+
+  const tickMatch = url.pathname.match(/^\/api\/workflows\/([^/]+)\/tick$/);
+  if (method === "POST" && tickMatch) {
+    const executionId = tickMatch[1];
+    if (!executionId) {
+      sendJson(res, 400, { error: "workflow execution id is required" });
+      return;
+    }
+    const body = (await readBody(req)) as { forceFailCurrentStage?: boolean };
+    try {
+      const execution = orchestrator.tickWorkflow(executionId, body.forceFailCurrentStage === true);
+      refreshProjections(orchestrator);
+      sendJson(res, 200, { execution });
+      return;
+    } catch (error) {
+      sendJson(res, 404, { error: (error as Error).message });
+      return;
+    }
   }
 
   if (method === "POST" && url.pathname === "/api/approvals/evaluate") {
