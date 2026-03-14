@@ -1,13 +1,18 @@
+import { ActivityConsole } from "../components/ActivityConsole.js";
 import { ChatMultiplexer } from "../components/ChatMultiplexer.js";
+import { CodeEditorPane } from "../components/CodeEditorPane.js";
 import { InterventionRail } from "../components/InterventionRail.js";
 import { MissionGrid } from "../components/MissionGrid.js";
 import { OperatorMetricsPanel } from "../components/OperatorMetricsPanel.js";
 import { RelationshipGraph } from "../components/RelationshipGraph.js";
+import { WorkspaceExplorer } from "../components/WorkspaceExplorer.js";
 import { useOrchestratorState } from "../hooks/useOrchestratorState.js";
+import { useWorkspaceEditor } from "../hooks/useWorkspaceEditor.js";
 
 export function CommandCenterLayout(): JSX.Element {
   const { agents, approvals, relationships, chats, metrics, metricsHistory, loading, error, resolveApproval } =
     useOrchestratorState();
+  const workspace = useWorkspaceEditor();
 
   return (
     <main
@@ -30,14 +35,38 @@ export function CommandCenterLayout(): JSX.Element {
         </p>
       </header>
 
-      <section style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 14 }}>
-        <MissionGrid agents={agents} />
-        <InterventionRail
-          approvals={approvals}
-          onResolveApproval={(approvalId, resolution) => {
-            void resolveApproval(approvalId, resolution);
+      <section style={{ display: "grid", gridTemplateColumns: "1.1fr 2fr 1.6fr", gap: 14, marginBottom: 14 }}>
+        <WorkspaceExplorer
+          tree={workspace.tree}
+          selectedPath={workspace.selectedPath}
+          onSelect={(path) => {
+            void workspace.selectFile(path);
           }}
         />
+        <CodeEditorPane
+          selectedPath={workspace.selectedPath}
+          content={workspace.content}
+          loading={workspace.loading}
+          saving={workspace.saving}
+          dirty={workspace.dirty}
+          onChange={workspace.updateContent}
+          onSave={() => {
+            void workspace.saveFile();
+          }}
+        />
+        <div style={{ display: "grid", gap: 14 }}>
+          <MissionGrid agents={agents} />
+          <InterventionRail
+            approvals={approvals}
+            onResolveApproval={(approvalId, resolution) => {
+              void resolveApproval(approvalId, resolution);
+            }}
+          />
+        </div>
+      </section>
+
+      <section style={{ marginBottom: 14 }}>
+        <ActivityConsole activities={workspace.activities} />
       </section>
 
       <section style={{ marginBottom: 14 }}>
