@@ -56,8 +56,20 @@ interface SnapshotPacket {
   metrics?: OperatorMetrics;
 }
 
-const DEFAULT_RUNTIME_BASE_URL = "http://127.0.0.1:8787";
+const DEFAULT_RUNTIME_BASE_URL = typeof window === "undefined" ? "http://127.0.0.1:8787" : "";
 const HISTORY_WINDOW = 24;
+
+function runtimeUrl(path: string): string {
+  return `${DEFAULT_RUNTIME_BASE_URL}${path}`;
+}
+
+function runtimeWebSocketUrl(path: string): string {
+  if (DEFAULT_RUNTIME_BASE_URL) {
+    return `${DEFAULT_RUNTIME_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")}${path}`;
+  }
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}${path}`;
+}
 
 function appendPoint(series: number[], value: number): number[] {
   const next = [...series, value];
@@ -93,7 +105,7 @@ export function useOrchestratorState(): CommandCenterState {
   const [error, setError] = useState<string | undefined>(undefined);
 
   const resolveApproval = useCallback(async (approvalId: string, resolution: "approved" | "rejected") => {
-    const response = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/approvals/${approvalId}/resolve`, {
+    const response = await fetch(runtimeUrl(`/api/approvals/${approvalId}/resolve`), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ resolution, signerId: "manager" })
@@ -103,11 +115,11 @@ export function useOrchestratorState(): CommandCenterState {
       throw new Error(`Failed to resolve approval ${approvalId}`);
     }
 
-    const fresh = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/snapshot`);
+    const fresh = await fetch(runtimeUrl("/api/snapshot"));
     if (!fresh.ok) {
       throw new Error("Failed to refresh snapshot after approval update");
     }
-    const metricsResponse = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/metrics`);
+    const metricsResponse = await fetch(runtimeUrl("/api/metrics"));
     if (!metricsResponse.ok) {
       throw new Error("Failed to refresh metrics after approval update");
     }
@@ -125,8 +137,8 @@ export function useOrchestratorState(): CommandCenterState {
 
     async function bootstrap(): Promise<void> {
       try {
-        const response = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/snapshot`);
-        const metricsResponse = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/metrics`);
+        const response = await fetch(runtimeUrl("/api/snapshot"));
+        const metricsResponse = await fetch(runtimeUrl("/api/metrics"));
         if (response.ok) {
           const payload = (await response.json()) as SnapshotPayload;
           const metricsPayload = metricsResponse.ok ? ((await metricsResponse.json()) as OperatorMetrics) : mockMetrics;
@@ -150,7 +162,7 @@ export function useOrchestratorState(): CommandCenterState {
       }
 
       try {
-        socket = new WebSocket(`${DEFAULT_RUNTIME_BASE_URL.replace("http", "ws")}/ws`);
+        socket = new WebSocket(runtimeWebSocketUrl("/ws"));
         socket.onmessage = (event) => {
           const packet = JSON.parse(event.data as string) as SnapshotPacket;
           if (!disposed && packet.snapshot) {

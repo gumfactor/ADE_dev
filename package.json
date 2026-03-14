@@ -11,7 +11,9 @@
     "clean": "find . -name '*.tsbuildinfo' -delete && find . -name 'dist' -type d -prune -exec rm -rf {} +",
     "typecheck": "tsc -b --pretty false",
     "runtime:start": "node packages/runtime-service/dist/index.js",
-    "scenario:test": "npm run build && node packages/runtime-service/dist/scenario-tests.js"
+    "scenario:test": "npm run build && node packages/runtime-service/dist/scenario-tests.js",
+    "ui:dev": "npm run dev --workspace @ade/command-center-ui",
+    "ui:build": "npm run build:app --workspace @ade/command-center-ui"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",

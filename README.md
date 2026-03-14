@@ -227,6 +227,8 @@ Phase 1 foundation is implemented in this repository as a TypeScript monorepo:
 - `packages/command-center-ui`: command-center prototype with Mission Grid, Relationship Graph, Intervention Rail, and multi-chat view.
 - `docs`: architecture, domain model, event schema, approval workflow, and runtime API docs.
 
+Command center UI now has a standalone Vite runtime host with API/WebSocket proxy support for local execution.
+
 Workflow engine is now active in orchestrator runtime:
 
 - Stage progression for dependency-ready workflow stages.
@@ -257,3 +259,9 @@ Workflow engine is now active in orchestrator runtime:
 4. Start runtime service (for live UI data + approval actions)
 
   `npm run runtime:start`
+
+5. Start command center UI host in another terminal
+
+  `npm run ui:dev`
+
+  Open `http://127.0.0.1:5173`
