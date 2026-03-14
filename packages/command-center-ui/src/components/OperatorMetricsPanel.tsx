@@ -1,3 +1,5 @@
+import { useMemo, useState } from "react";
+
 interface OperatorMetrics {
   workflowTotals: {
     running: number;
@@ -32,6 +34,35 @@ interface OperatorMetricsPanelProps {
   metrics: OperatorMetrics;
   history: MetricsHistory;
 }
+
+type AlertSeverity = "critical" | "warning" | "info";
+
+interface OperatorAlert {
+  id: string;
+  severity: AlertSeverity;
+  message: string;
+}
+
+const ALERT_STYLE: Record<AlertSeverity, { border: string; background: string; text: string; badge: string }> = {
+  critical: {
+    border: "1px solid rgba(255, 118, 118, 0.65)",
+    background: "rgba(82, 22, 22, 0.5)",
+    text: "#ffd7d7",
+    badge: "#ff9090"
+  },
+  warning: {
+    border: "1px solid rgba(255, 185, 113, 0.6)",
+    background: "rgba(80, 39, 14, 0.45)",
+    text: "#ffd7b5",
+    badge: "#ffca7a"
+  },
+  info: {
+    border: "1px solid rgba(127, 205, 255, 0.55)",
+    background: "rgba(14, 41, 70, 0.45)",
+    text: "#d3eeff",
+    badge: "#8fd8ff"
+  }
+};
 
 function renderSparkline(points: number[], color: string): JSX.Element {
   const width = 120;
@@ -83,35 +114,152 @@ export function OperatorMetricsPanel({ metrics, history }: OperatorMetricsPanelP
   const completionPct = `${Math.round(metrics.workflowTotals.completionRate * 100)}%`;
   const meanDurationSeconds = `${Math.round(metrics.efficiency.meanWorkflowDurationMs / 1000)}s`;
 
-  const alerts: string[] = [];
-  if (metrics.reliability.pendingApprovals >= 3) {
-    alerts.push("Approval backlog is elevated (>= 3 pending). Consider batching or delegation.");
-  }
-  if (metrics.reliability.escalationEvents > 0) {
-    alerts.push("Escalations detected. Investigate failure-mode policy and retry budgets.");
-  }
-  if (metrics.workflowTotals.total > 0 && metrics.workflowTotals.completionRate < 0.4) {
-    alerts.push("Workflow completion rate is low (< 40%). Consider reducing concurrency or tuning stages.");
-  }
+  const alerts = useMemo<OperatorAlert[]>(() => {
+    const next: OperatorAlert[] = [];
+
+    if (metrics.reliability.pendingApprovals >= 5) {
+      next.push({
+        id: "approval_backlog_critical",
+        severity: "critical",
+        message: "Approval backlog is critical (>= 5 pending). Trigger delegate batch triage now."
+      });
+    } else if (metrics.reliability.pendingApprovals >= 3) {
+      next.push({
+        id: "approval_backlog_warning",
+        severity: "warning",
+        message: "Approval backlog is elevated (>= 3 pending). Consider batching or delegation."
+      });
+    }
+
+    if (metrics.reliability.escalationEvents > 0) {
+      next.push({
+        id: "escalations_present",
+        severity: "warning",
+        message: "Escalations detected. Investigate failure-mode policy and retry budgets."
+      });
+    }
+
+    if (metrics.workflowTotals.total > 0 && metrics.workflowTotals.completionRate < 0.4) {
+      next.push({
+        id: "low_completion_rate",
+        severity: "warning",
+        message: "Workflow completion rate is low (< 40%). Reduce concurrency or tune stage dependencies."
+      });
+    }
+
+    if (metrics.efficiency.totalCostUsd > 5) {
+      next.push({
+        id: "cost_burn_info",
+        severity: "info",
+        message: "Cost burn exceeded $5.00. Review tool trust levels and optimize expensive stages."
+      });
+    }
+
+    return next;
+  }, [metrics]);
+
+  const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Record<string, true>>({});
+  const [mutedAlerts, setMutedAlerts] = useState<Record<string, true>>({});
+
+  const visibleAlerts = alerts.filter((alert) => !mutedAlerts[alert.id]);
+  const mutedCount = alerts.filter((alert) => mutedAlerts[alert.id]).length;
+
+  const acknowledge = (alertId: string): void => {
+    setAcknowledgedAlerts((previous) => ({ ...previous, [alertId]: true }));
+  };
+
+  const toggleMute = (alertId: string): void => {
+    setMutedAlerts((previous) => {
+      if (previous[alertId]) {
+        const next = { ...previous };
+        delete next[alertId];
+        return next;
+      }
+      return { ...previous, [alertId]: true };
+    });
+  };
 
   return (
     <section style={{ display: "grid", gap: 10 }}>
       <h2 style={{ margin: 0, fontSize: 18, letterSpacing: 0.3 }}>Operator Metrics</h2>
-      {alerts.length > 0 ? (
-        <div
-          style={{
-            borderRadius: 12,
-            border: "1px solid rgba(255, 163, 102, 0.55)",
-            background: "rgba(80, 39, 14, 0.45)",
-            padding: 10
-          }}
-        >
-          {alerts.map((alert) => (
-            <p key={alert} style={{ margin: "0 0 4px", fontSize: 12, color: "#ffd7b5" }}>
-              {alert}
-            </p>
-          ))}
+      {visibleAlerts.length > 0 ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          {visibleAlerts.map((alert) => {
+            const style = ALERT_STYLE[alert.severity];
+            return (
+              <div
+                key={alert.id}
+                style={{
+                  borderRadius: 12,
+                  border: style.border,
+                  background: style.background,
+                  padding: 10,
+                  display: "grid",
+                  gap: 8
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.12)",
+                      color: style.badge,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.4,
+                      fontWeight: 700
+                    }}
+                  >
+                    {alert.severity}
+                  </span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        acknowledge(alert.id);
+                      }}
+                      style={{
+                        border: "1px solid rgba(255,255,255,0.28)",
+                        borderRadius: 8,
+                        background: acknowledgedAlerts[alert.id] ? "rgba(51, 104, 82, 0.55)" : "rgba(18, 38, 54, 0.45)",
+                        color: "#e7f4ff",
+                        padding: "4px 8px",
+                        cursor: "pointer",
+                        fontSize: 11
+                      }}
+                    >
+                      {acknowledgedAlerts[alert.id] ? "Acknowledged" : "Acknowledge"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toggleMute(alert.id);
+                      }}
+                      style={{
+                        border: "1px solid rgba(255,255,255,0.28)",
+                        borderRadius: 8,
+                        background: "rgba(32, 22, 44, 0.5)",
+                        color: "#f5dcff",
+                        padding: "4px 8px",
+                        cursor: "pointer",
+                        fontSize: 11
+                      }}
+                    >
+                      Mute
+                    </button>
+                  </div>
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: style.text }}>{alert.message}</p>
+              </div>
+            );
+          })}
         </div>
+      ) : null}
+      {mutedCount > 0 ? (
+        <p style={{ margin: 0, fontSize: 12, opacity: 0.78 }}>
+          {mutedCount} alert{mutedCount > 1 ? "s" : ""} muted.
+        </p>
       ) : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
         {metricCard(
