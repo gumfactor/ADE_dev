@@ -18,6 +18,9 @@ All stateful activity is represented by immutable domain events.
 
 ## Required Event Types
 
+- command.accepted
+- command.rejected
+- command.applied
 - agent.created
 - agent.state_changed
 - agent.message_sent
@@ -35,3 +38,4 @@ All stateful activity is represented by immutable domain events.
 3. Correlation and causation fields preserve traceability.
 4. Metadata includes workspace and optional cost/token telemetry.
 5. Consumers must be idempotent under replay.
+6. Operator command events must form a lifecycle chain: accepted -> applied or accepted -> rejected.

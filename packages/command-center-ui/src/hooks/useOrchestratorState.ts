@@ -32,6 +32,24 @@ export interface MetricsHistory {
   totalCostUsd: number[];
 }
 
+export interface MetricDetail {
+  metricId: string;
+  title: string;
+  value: number;
+  unit?: string;
+  description: string;
+  samples: number[];
+  eventCount: number;
+}
+
+export interface AgentDetail {
+  agent: Agent;
+  workflows: WorkflowExecution[];
+  approvals: ApprovalRequest[];
+  messages: MessageEnvelope[];
+  peerAgents: Agent[];
+}
+
 export interface CommandCenterState {
   agents: Agent[];
   relationships: AgentRelationship[];
@@ -45,8 +63,16 @@ export interface CommandCenterState {
   error?: string;
   resolveApproval: (approvalId: string, resolution: "approved" | "rejected") => Promise<void>;
   tickAllWorkflows: () => Promise<void>;
+  startWorkflow: (workflowId?: string) => Promise<void>;
+  pauseWorkflow: (executionId: string) => Promise<void>;
+  resumeWorkflow: (executionId: string) => Promise<void>;
+  cancelWorkflow: (executionId: string) => Promise<void>;
+  updateStageAssignment: (executionId: string, stageId: string, agentId: string) => Promise<void>;
   setStageFailureMode: (executionId: string, stageId: string, mode: "none" | "random" | "always_fail") => Promise<void>;
   toggleToolEnabled: (toolId: string, enabled: boolean) => Promise<void>;
+  getMetricDetail: (metricId: string) => Promise<MetricDetail>;
+  getAgentDetail: (agentId: string) => Promise<AgentDetail>;
+  chatWithAgent: (agentId: string, text: string, model?: string) => Promise<MessageEnvelope | undefined>;
 }
 
 interface SnapshotPayload {
@@ -165,6 +191,69 @@ export function useOrchestratorState(): CommandCenterState {
     await refreshFromRuntime();
   }, [refreshFromRuntime]);
 
+  const startWorkflow = useCallback(
+    async (workflowId?: string) => {
+      const response = await fetch(runtimeUrl("/api/workflows/start"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workflowId })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to start workflow");
+      }
+      await refreshFromRuntime();
+    },
+    [refreshFromRuntime]
+  );
+
+  const pauseWorkflow = useCallback(
+    async (executionId: string) => {
+      const response = await fetch(runtimeUrl(`/api/workflows/${executionId}/pause`), { method: "POST" });
+      if (!response.ok) {
+        throw new Error(`Failed to pause workflow ${executionId}`);
+      }
+      await refreshFromRuntime();
+    },
+    [refreshFromRuntime]
+  );
+
+  const resumeWorkflow = useCallback(
+    async (executionId: string) => {
+      const response = await fetch(runtimeUrl(`/api/workflows/${executionId}/resume`), { method: "POST" });
+      if (!response.ok) {
+        throw new Error(`Failed to resume workflow ${executionId}`);
+      }
+      await refreshFromRuntime();
+    },
+    [refreshFromRuntime]
+  );
+
+  const cancelWorkflow = useCallback(
+    async (executionId: string) => {
+      const response = await fetch(runtimeUrl(`/api/workflows/${executionId}/cancel`), { method: "POST" });
+      if (!response.ok) {
+        throw new Error(`Failed to cancel workflow ${executionId}`);
+      }
+      await refreshFromRuntime();
+    },
+    [refreshFromRuntime]
+  );
+
+  const updateStageAssignment = useCallback(
+    async (executionId: string, stageId: string, agentId: string) => {
+      const response = await fetch(runtimeUrl(`/api/workflows/${executionId}`), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stageId, agentId })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to update stage assignment");
+      }
+      await refreshFromRuntime();
+    },
+    [refreshFromRuntime]
+  );
+
   const setStageFailureMode = useCallback(
     async (executionId: string, stageId: string, mode: "none" | "random" | "always_fail") => {
       const response = await fetch(runtimeUrl(`/api/workflows/${executionId}/failure-mode`), {
@@ -191,6 +280,39 @@ export function useOrchestratorState(): CommandCenterState {
         throw new Error("Failed to update tool enablement");
       }
       await refreshFromRuntime();
+    },
+    [refreshFromRuntime]
+  );
+
+  const getMetricDetail = useCallback(async (metricId: string): Promise<MetricDetail> => {
+    const response = await fetch(runtimeUrl(`/api/metrics/${metricId}`));
+    if (!response.ok) {
+      throw new Error(`Failed to load metric detail for ${metricId}`);
+    }
+    return (await response.json()) as MetricDetail;
+  }, []);
+
+  const getAgentDetail = useCallback(async (agentId: string): Promise<AgentDetail> => {
+    const response = await fetch(runtimeUrl(`/api/agents/${agentId}`));
+    if (!response.ok) {
+      throw new Error(`Failed to load agent detail for ${agentId}`);
+    }
+    return (await response.json()) as AgentDetail;
+  }, []);
+
+  const chatWithAgent = useCallback(
+    async (agentId: string, text: string, model?: string): Promise<MessageEnvelope | undefined> => {
+      const response = await fetch(runtimeUrl(`/api/agents/${agentId}/chat`), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, model })
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to send chat to agent ${agentId}`);
+      }
+      const payload = (await response.json()) as { reply?: MessageEnvelope };
+      await refreshFromRuntime();
+      return payload.reply;
     },
     [refreshFromRuntime]
   );
@@ -267,9 +389,35 @@ export function useOrchestratorState(): CommandCenterState {
       error,
       resolveApproval,
       tickAllWorkflows,
+      startWorkflow,
+      pauseWorkflow,
+      resumeWorkflow,
+      cancelWorkflow,
+      updateStageAssignment,
       setStageFailureMode,
-      toggleToolEnabled
+      toggleToolEnabled,
+      getMetricDetail,
+      getAgentDetail,
+      chatWithAgent
     }),
-    [snapshot, metrics, metricsHistory, loading, error, resolveApproval, tickAllWorkflows, setStageFailureMode, toggleToolEnabled]
+    [
+      snapshot,
+      metrics,
+      metricsHistory,
+      loading,
+      error,
+      resolveApproval,
+      tickAllWorkflows,
+      startWorkflow,
+      pauseWorkflow,
+      resumeWorkflow,
+      cancelWorkflow,
+      updateStageAssignment,
+      setStageFailureMode,
+      toggleToolEnabled,
+      getMetricDetail,
+      getAgentDetail,
+      chatWithAgent
+    ]
   );
 }

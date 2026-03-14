@@ -45,7 +45,7 @@ export interface WorkflowDefinition {
   optimizationDefault: OptimizationMode;
 }
 
-export type WorkflowExecutionStatus = "running" | "paused" | "completed" | "failed";
+export type WorkflowExecutionStatus = "running" | "paused" | "completed" | "failed" | "cancelled";
 
 export type StageFailureMode = "none" | "random" | "always_fail";
 

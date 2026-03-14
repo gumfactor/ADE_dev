@@ -236,6 +236,16 @@ Workflow engine is now active in orchestrator runtime:
 - Escalation to configured role when retries are exhausted.
 - Runtime tick endpoints for deterministic progression/failure simulation.
 
+Command-driven control is now available for workflow operations:
+
+- Unified `POST /api/commands` endpoint for start/pause/resume/cancel/tick/failure-mode/assignment actions.
+- Command lifecycle events emitted for auditability: `command.accepted`, `command.applied`, `command.rejected`.
+
+Execution logs:
+
+- Project change log: `CHANGELOG.md`
+- Iteration work log: `WORKLOG.md`
+
 ### Chosen Operating Defaults
 
 - Relationship model: manager-worker hierarchy on top of a flexible DAG.

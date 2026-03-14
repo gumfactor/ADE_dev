@@ -1,6 +1,9 @@
-export type AggregateType = "agent" | "workflow" | "approval" | "message";
+export type AggregateType = "agent" | "workflow" | "approval" | "message" | "command";
 
 export type EventType =
+  | "command.accepted"
+  | "command.rejected"
+  | "command.applied"
   | "agent.created"
   | "agent.state_changed"
   | "agent.message_sent"

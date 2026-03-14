@@ -49,6 +49,22 @@ Environment overrides:
     - aggregate token/cost totals
     - mean workflow completion duration
 
+- `POST /api/commands`
+  - Unified operator command endpoint for workflow execution control.
+  - Body:
+    - `commandId` (optional, generated if omitted)
+    - `type` (`workflow.start` | `workflow.pause` | `workflow.resume` | `workflow.cancel` | `workflow.tick` | `workflow.set_failure_mode` | `workflow.update_assignment`)
+    - `actorId` (optional, defaults to `operator`)
+    - `payload` (command-specific fields)
+  - Returns:
+    - `ok`, `commandId`, `commandType`
+    - execution/definition payload when applied
+    - error payload when rejected
+  - Emits command lifecycle events:
+    - `command.accepted`
+    - `command.applied`
+    - `command.rejected`
+
 - `GET /api/registry/tools`
   - Lists tool registry entries including trust level, version, scopes, and enablement.
 

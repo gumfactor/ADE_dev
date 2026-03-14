@@ -2,6 +2,9 @@ import {
   type Agent,
   type AgentState,
   type ApprovalRequest,
+  type CommandAccepted,
+  type CommandApplied,
+  type CommandRejected,
   type DomainEvent,
   type MessageEnvelope,
   type StageFailureMode,
@@ -119,6 +122,10 @@ export class OrchestratorService {
 
   listWorkflowDefinitions(): WorkflowDefinition[] {
     return [...this.workflowDefinitions.values()];
+  }
+
+  getWorkflow(executionId: string): WorkflowExecution {
+    return this.requireWorkflow(executionId);
   }
 
   startWorkflow(definition: WorkflowDefinition): WorkflowExecution {
@@ -319,6 +326,68 @@ export class OrchestratorService {
     return execution;
   }
 
+  pauseWorkflow(executionId: string): WorkflowExecution {
+    const execution = this.requireWorkflow(executionId);
+    if (execution.status === "running") {
+      execution.status = "paused";
+      execution.lastTransitionAt = new Date().toISOString();
+      this.emit("workflow.stage_advanced", execution.id, "workflow", {
+        workflowId: execution.workflowId,
+        result: "paused"
+      });
+    }
+    return execution;
+  }
+
+  resumeWorkflow(executionId: string): WorkflowExecution {
+    const execution = this.requireWorkflow(executionId);
+    if (execution.status === "paused") {
+      execution.status = "running";
+      execution.escalationStageId = undefined;
+      execution.lastTransitionAt = new Date().toISOString();
+      this.emit("workflow.stage_advanced", execution.id, "workflow", {
+        workflowId: execution.workflowId,
+        result: "resumed"
+      });
+    }
+    return execution;
+  }
+
+  cancelWorkflow(executionId: string): WorkflowExecution {
+    const execution = this.requireWorkflow(executionId);
+    if (execution.status !== "completed" && execution.status !== "failed" && execution.status !== "cancelled") {
+      execution.status = "cancelled";
+      execution.currentStageId = undefined;
+      execution.completedAt = new Date().toISOString();
+      execution.lastTransitionAt = execution.completedAt;
+      this.emit("workflow.stage_advanced", execution.id, "workflow", {
+        workflowId: execution.workflowId,
+        result: "cancelled"
+      });
+    }
+    return execution;
+  }
+
+  updateStageAgentAssignment(executionId: string, stageId: string, agentId: string): WorkflowExecution {
+    const execution = this.requireWorkflow(executionId);
+    this.requireAgent(agentId);
+    const definition = this.requireWorkflowDefinition(execution.workflowId);
+    const stageExists = definition.stages.some((stage) => stage.id === stageId);
+    if (!stageExists) {
+      throw new Error(`Stage not found in workflow definition: ${stageId}`);
+    }
+
+    execution.stageAgentAssignments[stageId] = agentId;
+    execution.lastTransitionAt = new Date().toISOString();
+    this.emit("workflow.stage_advanced", execution.id, "workflow", {
+      workflowId: execution.workflowId,
+      stageId,
+      result: "assignment_updated",
+      agentId
+    });
+    return execution;
+  }
+
   setStageFailureMode(executionId: string, stageId: string, mode: StageFailureMode): WorkflowExecution {
     const execution = this.requireWorkflow(executionId);
     execution.stageFailureModes[stageId] = mode;
@@ -340,6 +409,27 @@ export class OrchestratorService {
       }
     }
     return updates;
+  }
+
+  recordCommandAccepted(event: CommandAccepted): void {
+    this.emit("command.accepted", event.commandId, "command", event, {
+      id: event.actorId,
+      type: "human"
+    });
+  }
+
+  recordCommandRejected(event: CommandRejected): void {
+    this.emit("command.rejected", event.commandId, "command", event, {
+      id: event.actorId,
+      type: "human"
+    });
+  }
+
+  recordCommandApplied(event: CommandApplied): void {
+    this.emit("command.applied", event.commandId, "command", event, {
+      id: event.actorId,
+      type: "human"
+    });
   }
 
   private requireAgent(agentId: string): Agent {
@@ -405,7 +495,8 @@ export class OrchestratorService {
     eventType: DomainEvent["eventType"],
     aggregateId: string,
     aggregateType: DomainEvent["aggregateType"],
-    payload: unknown
+    payload: unknown,
+    actor: DomainEvent["actor"] = { id: "orchestrator", type: "system" }
   ): void {
     const event: DomainEvent = {
       eventId: `event-${crypto.randomUUID()}`,
@@ -414,7 +505,7 @@ export class OrchestratorService {
       aggregateType,
       timestamp: new Date().toISOString(),
       version: 1,
-      actor: { id: "orchestrator", type: "system" },
+      actor,
       payload,
       metadata: {
         workspaceId: "default",
