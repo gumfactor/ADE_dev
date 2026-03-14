@@ -24,7 +24,8 @@ function refreshProjections(orchestrator: OrchestratorService): void {
 function broadcast(orchestrator: OrchestratorService, event: DomainEvent): void {
   refreshProjections(orchestrator);
   const snapshot = projections.snapshot(eventStore.query({ limit: 500 }));
-  const payload = JSON.stringify({ type: "event", event, snapshot });
+  const metrics = projections.metrics(snapshot.events);
+  const payload = JSON.stringify({ type: "event", event, snapshot, metrics });
 
   for (const socket of sockets) {
     if (socket.readyState === WebSocket.OPEN) {
@@ -95,6 +96,12 @@ const server = createServer(async (req, res) => {
 
   if (method === "GET" && url.pathname === "/api/snapshot") {
     sendJson(res, 200, projections.snapshot(eventStore.query({ limit: 500 })));
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/metrics") {
+    const snapshot = projections.snapshot(eventStore.query({ limit: 500 }));
+    sendJson(res, 200, projections.metrics(snapshot.events));
     return;
   }
 
@@ -194,7 +201,8 @@ wss.on("connection", (socket: WebSocket) => {
   socket.send(
     JSON.stringify({
       type: "snapshot",
-      snapshot: projections.snapshot(eventStore.query({ limit: 500 }))
+      snapshot: projections.snapshot(eventStore.query({ limit: 500 })),
+      metrics: projections.metrics(eventStore.query({ limit: 500 }))
     })
   );
 

@@ -29,6 +29,14 @@ Environment overrides:
     - chats
     - recent events
 
+- `GET /api/metrics`
+  - Returns projected reliability and efficiency metrics:
+    - workflow totals and completion rate
+    - retry and escalation counts
+    - approval intervention counts
+    - aggregate token/cost totals
+    - mean workflow completion duration
+
 - `POST /api/approvals/evaluate`
   - Body:
     - `toolName`
@@ -54,7 +62,7 @@ Environment overrides:
 
 - `GET /ws` (WebSocket upgrade)
   - Sends initial snapshot packet.
-  - Broadcasts event packets with updated snapshot whenever new domain events are appended.
+  - Broadcasts event packets with updated snapshot and metrics whenever new domain events are appended.
 
 ## Workflow Engine Notes
 
