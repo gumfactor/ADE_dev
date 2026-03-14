@@ -37,6 +37,23 @@ export class RuntimeRegistryStore {
     return this.tools.get(toolId);
   }
 
+  assertToolAllowed(toolId: string, scope: "single_file" | "workspace" | "repo" | "system"): {
+    ok: boolean;
+    error?: string;
+  } {
+    const tool = this.tools.get(toolId);
+    if (!tool) {
+      return { ok: false, error: `tool not found in registry: ${toolId}` };
+    }
+    if (!tool.enabled) {
+      return { ok: false, error: `tool is disabled by policy: ${toolId}` };
+    }
+    if (!tool.scopes.includes(scope)) {
+      return { ok: false, error: `tool scope ${scope} is not allowed for ${toolId}` };
+    }
+    return { ok: true };
+  }
+
   setToolEnabled(toolId: string, enabled: boolean): ToolRegistryEntry {
     const existing = this.tools.get(toolId);
     if (!existing) {

@@ -197,17 +197,9 @@ const server = createServer(async (req, res) => {
     const toolName = body.toolName ?? "filesystem.write";
     const scope = body.scope ?? "workspace";
 
-    const tool = registry.getTool(toolName);
-    if (!tool) {
-      sendJson(res, 404, { error: `tool not found in registry: ${toolName}` });
-      return;
-    }
-    if (!tool.enabled) {
-      sendJson(res, 403, { error: `tool is disabled by policy: ${toolName}` });
-      return;
-    }
-    if (!tool.scopes.includes(scope)) {
-      sendJson(res, 403, { error: `tool scope ${scope} is not allowed for ${toolName}` });
+    const toolPolicy = registry.assertToolAllowed(toolName, scope);
+    if (!toolPolicy.ok) {
+      sendJson(res, 403, { error: toolPolicy.error });
       return;
     }
 

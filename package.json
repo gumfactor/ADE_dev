@@ -10,7 +10,8 @@
     "build": "tsc -b",
     "clean": "find . -name '*.tsbuildinfo' -delete && find . -name 'dist' -type d -prune -exec rm -rf {} +",
     "typecheck": "tsc -b --pretty false",
-    "runtime:start": "node packages/runtime-service/dist/index.js"
+    "runtime:start": "node packages/runtime-service/dist/index.js",
+    "scenario:test": "npm run build && node packages/runtime-service/dist/scenario-tests.js"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
