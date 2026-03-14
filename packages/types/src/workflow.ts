@@ -47,6 +47,8 @@ export interface WorkflowDefinition {
 
 export type WorkflowExecutionStatus = "running" | "paused" | "completed" | "failed";
 
+export type StageFailureMode = "none" | "random" | "always_fail";
+
 export interface WorkflowExecution {
   id: string;
   workflowId: string;
@@ -55,6 +57,8 @@ export interface WorkflowExecution {
   stageAgentAssignments: Record<string, string>;
   completedStageIds: string[];
   retryCountByStage: Record<string, number>;
+  retryReadyAtByStage: Record<string, string>;
+  stageFailureModes: Record<string, StageFailureMode>;
   escalationStageId?: string;
   lastTransitionAt?: string;
   createdAt: string;

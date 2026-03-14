@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { WebSocket, WebSocketServer } from "ws";
 import { InMemoryEventStore } from "@ade/event-store";
 import { OrchestratorService } from "@ade/orchestrator-core";
-import type { DomainEvent, MessageEnvelope } from "@ade/types";
+import type { DomainEvent, MessageEnvelope, StageFailureMode } from "@ade/types";
 import { RuntimeProjectionStore } from "./projections.js";
 import { seedAgents, seedMessages, seedRelationships, seedWorkflow } from "./seed.js";
 
@@ -115,6 +115,33 @@ const server = createServer(async (req, res) => {
     const body = (await readBody(req)) as { forceFailCurrentStage?: boolean };
     try {
       const execution = orchestrator.tickWorkflow(executionId, body.forceFailCurrentStage === true);
+      refreshProjections(orchestrator);
+      sendJson(res, 200, { execution });
+      return;
+    } catch (error) {
+      sendJson(res, 404, { error: (error as Error).message });
+      return;
+    }
+  }
+
+  const failureModeMatch = url.pathname.match(/^\/api\/workflows\/([^/]+)\/failure-mode$/);
+  if (method === "POST" && failureModeMatch) {
+    const executionId = failureModeMatch[1];
+    if (!executionId) {
+      sendJson(res, 400, { error: "workflow execution id is required" });
+      return;
+    }
+    const body = (await readBody(req)) as { stageId?: string; mode?: StageFailureMode };
+    if (!body.stageId || !body.mode) {
+      sendJson(res, 400, { error: "stageId and mode are required" });
+      return;
+    }
+    if (!(["none", "random", "always_fail"] as StageFailureMode[]).includes(body.mode)) {
+      sendJson(res, 400, { error: "mode must be one of: none, random, always_fail" });
+      return;
+    }
+    try {
+      const execution = orchestrator.setStageFailureMode(executionId, body.stageId, body.mode);
       refreshProjections(orchestrator);
       sendJson(res, 200, { execution });
       return;

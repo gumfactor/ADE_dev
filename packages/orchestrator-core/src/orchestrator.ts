@@ -4,6 +4,7 @@ import {
   type ApprovalRequest,
   type DomainEvent,
   type MessageEnvelope,
+  type StageFailureMode,
   type WorkflowDefinition,
   type WorkflowExecution
 } from "@ade/types";
@@ -124,6 +125,8 @@ export class OrchestratorService {
       stageAgentAssignments: this.assignAgentsToStages(definition),
       completedStageIds: [],
       retryCountByStage: {},
+      retryReadyAtByStage: {},
+      stageFailureModes: {},
       currentStageId: undefined,
       createdAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
@@ -194,17 +197,28 @@ export class OrchestratorService {
     const assignedAgentId = execution.stageAgentAssignments[stage.id];
     const assignedAgent = assignedAgentId ? this.agents.get(assignedAgentId) : undefined;
 
-    if (forceFailCurrentStage) {
+    const retryReadyAt = execution.retryReadyAtByStage[stageId];
+    if (retryReadyAt && Date.now() < new Date(retryReadyAt).getTime()) {
+      return execution;
+    }
+
+    const simulatedFailure = forceFailCurrentStage || this.shouldFailStage(execution, stageId);
+
+    if (simulatedFailure) {
       const attempt = (execution.retryCountByStage[stageId] ?? 0) + 1;
       execution.retryCountByStage[stageId] = attempt;
       execution.lastTransitionAt = new Date().toISOString();
 
       if (attempt <= definition.retryPolicy.maxRetries) {
+        const backoffMs = this.computeBackoffMs(definition, attempt);
+        execution.retryReadyAtByStage[stageId] = new Date(Date.now() + backoffMs).toISOString();
         this.emit("workflow.stage_advanced", execution.id, "workflow", {
           workflowId: definition.id,
           stageId,
           result: "retrying",
-          attempt
+          attempt,
+          nextRetryAt: execution.retryReadyAtByStage[stageId],
+          backoffMs
         });
         return execution;
       }
@@ -221,6 +235,8 @@ export class OrchestratorService {
     }
 
     const stageResult = executeStage({ stage, execution, assignedAgent });
+    const timeoutMs = stage.primitive === "planner" ? definition.timeoutPolicy.planningTimeoutMs : definition.timeoutPolicy.executionTimeoutMs;
+    const timedOut = stageResult.wallClockMs > timeoutMs;
     this.emit("tool.executed", execution.id, "workflow", {
       workflowId: definition.id,
       stageId: stage.id,
@@ -228,21 +244,28 @@ export class OrchestratorService {
       summary: stageResult.summary,
       assignedAgentId,
       toolName: stageResult.toolName,
-      success: stageResult.success
+      success: stageResult.success && !timedOut,
+      tokenCost: stageResult.tokenCost,
+      costUsd: stageResult.costUsd,
+      wallClockMs: stageResult.wallClockMs
     });
 
-    if (!stageResult.success) {
+    if (!stageResult.success || timedOut) {
       const attempt = (execution.retryCountByStage[stageId] ?? 0) + 1;
       execution.retryCountByStage[stageId] = attempt;
       execution.lastTransitionAt = new Date().toISOString();
 
       if (attempt <= definition.retryPolicy.maxRetries) {
+        const backoffMs = this.computeBackoffMs(definition, attempt);
+        execution.retryReadyAtByStage[stageId] = new Date(Date.now() + backoffMs).toISOString();
         this.emit("workflow.stage_advanced", execution.id, "workflow", {
           workflowId: definition.id,
           stageId,
           result: "retrying",
           attempt,
-          reason: stageResult.summary
+          reason: timedOut ? "stage_timeout" : stageResult.summary,
+          nextRetryAt: execution.retryReadyAtByStage[stageId],
+          backoffMs
         });
         return execution;
       }
@@ -254,7 +277,7 @@ export class OrchestratorService {
         stageId,
         result: "escalated",
         escalateToRole: definition.escalationPolicy.escalateToRole,
-        reason: stageResult.summary
+        reason: timedOut ? "stage_timeout" : stageResult.summary
       });
       return execution;
     }
@@ -262,6 +285,7 @@ export class OrchestratorService {
     completedSet.add(stageId);
     execution.completedStageIds = [...completedSet];
     execution.retryCountByStage[stageId] = 0;
+    delete execution.retryReadyAtByStage[stageId];
 
     const readyStages = this.scheduler.getReadyStageIds(definition.stages, completedSet);
     const nextStage = readyStages[0];
@@ -288,6 +312,19 @@ export class OrchestratorService {
       result: "advanced"
     });
 
+    return execution;
+  }
+
+  setStageFailureMode(executionId: string, stageId: string, mode: StageFailureMode): WorkflowExecution {
+    const execution = this.requireWorkflow(executionId);
+    execution.stageFailureModes[stageId] = mode;
+    execution.lastTransitionAt = new Date().toISOString();
+    this.emit("workflow.stage_advanced", execution.id, "workflow", {
+      workflowId: execution.workflowId,
+      stageId,
+      result: "failure_mode_updated",
+      mode
+    });
     return execution;
   }
 
@@ -334,6 +371,30 @@ export class OrchestratorService {
       }
     }
     return assignments;
+  }
+
+  private computeBackoffMs(definition: WorkflowDefinition, attempt: number): number {
+    const base = definition.retryPolicy.initialBackoffMs;
+    const backoff = base * 2 ** Math.max(0, attempt - 1);
+    return Math.min(backoff, definition.retryPolicy.maxBackoffMs);
+  }
+
+  private shouldFailStage(execution: WorkflowExecution, stageId: string): boolean {
+    const mode = execution.stageFailureModes[stageId] ?? "none";
+    if (mode === "none") {
+      return false;
+    }
+    if (mode === "always_fail") {
+      return true;
+    }
+
+    const attempt = execution.retryCountByStage[stageId] ?? 0;
+    const hashSeed = `${execution.id}:${stageId}:${attempt}`;
+    let hash = 0;
+    for (let i = 0; i < hashSeed.length; i += 1) {
+      hash = (hash * 31 + hashSeed.charCodeAt(i)) % 997;
+    }
+    return hash % 2 === 0;
   }
 
   private emit(
