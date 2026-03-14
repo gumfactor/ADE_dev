@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Agent, AgentRelationship, ApprovalRequest, MessageEnvelope } from "@ade/types";
+import type { Agent, AgentRelationship, ApprovalRequest, MessageEnvelope, WorkflowDefinition, WorkflowExecution } from "@ade/types";
 import { mockAgents, mockApprovals, mockChats, mockMetrics, mockRelationships } from "./mockState.js";
 
 export interface OperatorMetrics {
@@ -37,11 +37,16 @@ export interface CommandCenterState {
   relationships: AgentRelationship[];
   approvals: ApprovalRequest[];
   chats: Record<string, MessageEnvelope[]>;
+  workflows: WorkflowExecution[];
+  workflowDefinitions: WorkflowDefinition[];
   metrics: OperatorMetrics;
   metricsHistory: MetricsHistory;
   loading: boolean;
   error?: string;
   resolveApproval: (approvalId: string, resolution: "approved" | "rejected") => Promise<void>;
+  tickAllWorkflows: () => Promise<void>;
+  setStageFailureMode: (executionId: string, stageId: string, mode: "none" | "random" | "always_fail") => Promise<void>;
+  toggleToolEnabled: (toolId: string, enabled: boolean) => Promise<void>;
 }
 
 interface SnapshotPayload {
@@ -49,6 +54,8 @@ interface SnapshotPayload {
   relationships: AgentRelationship[];
   approvals: ApprovalRequest[];
   chats: Record<string, MessageEnvelope[]>;
+  workflows: WorkflowExecution[];
+  workflowDefinitions: WorkflowDefinition[];
 }
 
 interface SnapshotPacket {
@@ -91,7 +98,9 @@ export function useOrchestratorState(): CommandCenterState {
     agents: mockAgents,
     relationships: mockRelationships,
     approvals: mockApprovals,
-    chats: mockChats
+    chats: mockChats,
+    workflows: [],
+    workflowDefinitions: []
   });
   const [metrics, setMetrics] = useState<OperatorMetrics>(mockMetrics);
   const [metricsHistory, setMetricsHistory] = useState<MetricsHistory>({
@@ -130,6 +139,61 @@ export function useOrchestratorState(): CommandCenterState {
     setMetrics(updatedMetrics);
     setMetricsHistory((previous) => evolveHistory(previous, updatedMetrics));
   }, []);
+
+  const refreshFromRuntime = useCallback(async () => {
+    const fresh = await fetch(runtimeUrl("/api/snapshot"));
+    if (!fresh.ok) {
+      throw new Error("Failed to refresh snapshot");
+    }
+    const metricsResponse = await fetch(runtimeUrl("/api/metrics"));
+    if (!metricsResponse.ok) {
+      throw new Error("Failed to refresh metrics");
+    }
+
+    const payload = (await fresh.json()) as SnapshotPayload;
+    const updatedMetrics = (await metricsResponse.json()) as OperatorMetrics;
+    setSnapshot(payload);
+    setMetrics(updatedMetrics);
+    setMetricsHistory((previous) => evolveHistory(previous, updatedMetrics));
+  }, []);
+
+  const tickAllWorkflows = useCallback(async () => {
+    const response = await fetch(runtimeUrl("/api/workflows/tick-all"), { method: "POST" });
+    if (!response.ok) {
+      throw new Error("Failed to tick workflows");
+    }
+    await refreshFromRuntime();
+  }, [refreshFromRuntime]);
+
+  const setStageFailureMode = useCallback(
+    async (executionId: string, stageId: string, mode: "none" | "random" | "always_fail") => {
+      const response = await fetch(runtimeUrl(`/api/workflows/${executionId}/failure-mode`), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stageId, mode })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to update stage failure mode");
+      }
+      await refreshFromRuntime();
+    },
+    [refreshFromRuntime]
+  );
+
+  const toggleToolEnabled = useCallback(
+    async (toolId: string, enabled: boolean) => {
+      const response = await fetch(runtimeUrl(`/api/registry/tools/${toolId}/enabled`), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to update tool enablement");
+      }
+      await refreshFromRuntime();
+    },
+    [refreshFromRuntime]
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -195,12 +259,17 @@ export function useOrchestratorState(): CommandCenterState {
       relationships: snapshot.relationships,
       approvals: snapshot.approvals,
       chats: snapshot.chats,
+      workflows: snapshot.workflows,
+      workflowDefinitions: snapshot.workflowDefinitions,
       metrics,
       metricsHistory,
       loading,
       error,
-      resolveApproval
+      resolveApproval,
+      tickAllWorkflows,
+      setStageFailureMode,
+      toggleToolEnabled
     }),
-    [snapshot, metrics, metricsHistory, loading, error, resolveApproval]
+    [snapshot, metrics, metricsHistory, loading, error, resolveApproval, tickAllWorkflows, setStageFailureMode, toggleToolEnabled]
   );
 }

@@ -23,6 +23,7 @@ const sockets = new Set<import("ws").WebSocket>();
 function refreshProjections(orchestrator: OrchestratorService): void {
   projections.updateAgents(orchestrator.listAgents());
   projections.updateWorkflows(orchestrator.listWorkflows());
+  projections.updateWorkflowDefinitions(orchestrator.listWorkflowDefinitions());
   projections.updateApprovals(orchestrator.listApprovals());
 }
 

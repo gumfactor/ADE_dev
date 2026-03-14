@@ -4,6 +4,7 @@ import type {
   ApprovalRequest,
   DomainEvent,
   MessageEnvelope,
+  WorkflowDefinition,
   WorkflowExecution
 } from "@ade/types";
 
@@ -11,6 +12,7 @@ export interface RuntimeSnapshot {
   agents: Agent[];
   relationships: AgentRelationship[];
   workflows: WorkflowExecution[];
+  workflowDefinitions: WorkflowDefinition[];
   approvals: ApprovalRequest[];
   chats: Record<string, MessageEnvelope[]>;
   events: DomainEvent[];
@@ -42,6 +44,7 @@ export class RuntimeProjectionStore {
   private agents: Agent[] = [];
   private relationships: AgentRelationship[] = [];
   private workflows: WorkflowExecution[] = [];
+  private workflowDefinitions: WorkflowDefinition[] = [];
   private approvals: ApprovalRequest[] = [];
   private chats: Record<string, MessageEnvelope[]> = {};
 
@@ -51,6 +54,10 @@ export class RuntimeProjectionStore {
 
   updateWorkflows(workflows: WorkflowExecution[]): void {
     this.workflows = workflows;
+  }
+
+  updateWorkflowDefinitions(definitions: WorkflowDefinition[]): void {
+    this.workflowDefinitions = definitions;
   }
 
   updateRelationships(relationships: AgentRelationship[]): void {
@@ -73,6 +80,7 @@ export class RuntimeProjectionStore {
       agents: this.agents,
       relationships: this.relationships,
       workflows: this.workflows,
+      workflowDefinitions: this.workflowDefinitions,
       approvals: this.approvals,
       chats: this.chats,
       events

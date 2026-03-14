@@ -5,13 +5,29 @@ import { InterventionRail } from "../components/InterventionRail.js";
 import { MissionGrid } from "../components/MissionGrid.js";
 import { OperatorMetricsPanel } from "../components/OperatorMetricsPanel.js";
 import { RelationshipGraph } from "../components/RelationshipGraph.js";
+import { RuntimeControlsPanel } from "../components/RuntimeControlsPanel.js";
+import { WorkflowPipelineViz } from "../components/WorkflowPipelineViz.js";
 import { WorkspaceExplorer } from "../components/WorkspaceExplorer.js";
 import { useOrchestratorState } from "../hooks/useOrchestratorState.js";
 import { useWorkspaceEditor } from "../hooks/useWorkspaceEditor.js";
 
 export function CommandCenterLayout(): JSX.Element {
-  const { agents, approvals, relationships, chats, metrics, metricsHistory, loading, error, resolveApproval } =
-    useOrchestratorState();
+  const {
+    agents,
+    approvals,
+    relationships,
+    chats,
+    workflows,
+    workflowDefinitions,
+    metrics,
+    metricsHistory,
+    loading,
+    error,
+    resolveApproval,
+    tickAllWorkflows,
+    setStageFailureMode,
+    toggleToolEnabled
+  } = useOrchestratorState();
   const workspace = useWorkspaceEditor();
 
   return (
@@ -67,6 +83,19 @@ export function CommandCenterLayout(): JSX.Element {
 
       <section style={{ marginBottom: 14 }}>
         <ActivityConsole activities={workspace.activities} />
+      </section>
+
+      <section style={{ marginBottom: 14 }}>
+        <WorkflowPipelineViz workflows={workflows} workflowDefinitions={workflowDefinitions} />
+      </section>
+
+      <section style={{ marginBottom: 14 }}>
+        <RuntimeControlsPanel
+          workflows={workflows}
+          onTickAll={tickAllWorkflows}
+          onSetFailureMode={setStageFailureMode}
+          onToggleTool={toggleToolEnabled}
+        />
       </section>
 
       <section style={{ marginBottom: 14 }}>

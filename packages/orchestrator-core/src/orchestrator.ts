@@ -117,6 +117,10 @@ export class OrchestratorService {
     return [...this.approvalRequests.values()];
   }
 
+  listWorkflowDefinitions(): WorkflowDefinition[] {
+    return [...this.workflowDefinitions.values()];
+  }
+
   startWorkflow(definition: WorkflowDefinition): WorkflowExecution {
     const execution: WorkflowExecution = {
       id: `exec-${crypto.randomUUID()}`,
