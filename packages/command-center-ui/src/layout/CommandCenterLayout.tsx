@@ -6,7 +6,8 @@ import { RelationshipGraph } from "../components/RelationshipGraph.js";
 import { useOrchestratorState } from "../hooks/useOrchestratorState.js";
 
 export function CommandCenterLayout(): JSX.Element {
-  const { agents, approvals, relationships, chats, metrics, loading, error, resolveApproval } = useOrchestratorState();
+  const { agents, approvals, relationships, chats, metrics, metricsHistory, loading, error, resolveApproval } =
+    useOrchestratorState();
 
   return (
     <main
@@ -40,7 +41,7 @@ export function CommandCenterLayout(): JSX.Element {
       </section>
 
       <section style={{ marginBottom: 14 }}>
-        <OperatorMetricsPanel metrics={metrics} />
+        <OperatorMetricsPanel metrics={metrics} history={metricsHistory} />
       </section>
 
       <section style={{ display: "grid", gridTemplateColumns: "1.2fr 1.8fr", gap: 14 }}>

@@ -24,12 +24,21 @@ export interface OperatorMetrics {
   };
 }
 
+export interface MetricsHistory {
+  completionRate: number[];
+  pendingApprovals: number[];
+  retryEvents: number[];
+  escalationEvents: number[];
+  totalCostUsd: number[];
+}
+
 export interface CommandCenterState {
   agents: Agent[];
   relationships: AgentRelationship[];
   approvals: ApprovalRequest[];
   chats: Record<string, MessageEnvelope[]>;
   metrics: OperatorMetrics;
+  metricsHistory: MetricsHistory;
   loading: boolean;
   error?: string;
   resolveApproval: (approvalId: string, resolution: "approved" | "rejected") => Promise<void>;
@@ -48,6 +57,22 @@ interface SnapshotPacket {
 }
 
 const DEFAULT_RUNTIME_BASE_URL = "http://127.0.0.1:8787";
+const HISTORY_WINDOW = 24;
+
+function appendPoint(series: number[], value: number): number[] {
+  const next = [...series, value];
+  return next.length > HISTORY_WINDOW ? next.slice(next.length - HISTORY_WINDOW) : next;
+}
+
+function evolveHistory(previous: MetricsHistory, metrics: OperatorMetrics): MetricsHistory {
+  return {
+    completionRate: appendPoint(previous.completionRate, metrics.workflowTotals.completionRate),
+    pendingApprovals: appendPoint(previous.pendingApprovals, metrics.reliability.pendingApprovals),
+    retryEvents: appendPoint(previous.retryEvents, metrics.reliability.retryEvents),
+    escalationEvents: appendPoint(previous.escalationEvents, metrics.reliability.escalationEvents),
+    totalCostUsd: appendPoint(previous.totalCostUsd, metrics.efficiency.totalCostUsd)
+  };
+}
 
 export function useOrchestratorState(): CommandCenterState {
   const [snapshot, setSnapshot] = useState<SnapshotPayload>({
@@ -57,6 +82,13 @@ export function useOrchestratorState(): CommandCenterState {
     chats: mockChats
   });
   const [metrics, setMetrics] = useState<OperatorMetrics>(mockMetrics);
+  const [metricsHistory, setMetricsHistory] = useState<MetricsHistory>({
+    completionRate: [mockMetrics.workflowTotals.completionRate],
+    pendingApprovals: [mockMetrics.reliability.pendingApprovals],
+    retryEvents: [mockMetrics.reliability.retryEvents],
+    escalationEvents: [mockMetrics.reliability.escalationEvents],
+    totalCostUsd: [mockMetrics.efficiency.totalCostUsd]
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>(undefined);
 
@@ -84,6 +116,7 @@ export function useOrchestratorState(): CommandCenterState {
     const updatedMetrics = (await metricsResponse.json()) as OperatorMetrics;
     setSnapshot(payload);
     setMetrics(updatedMetrics);
+    setMetricsHistory((previous) => evolveHistory(previous, updatedMetrics));
   }, []);
 
   useEffect(() => {
@@ -100,6 +133,7 @@ export function useOrchestratorState(): CommandCenterState {
           if (!disposed) {
             setSnapshot(payload);
             setMetrics(metricsPayload);
+            setMetricsHistory((previous) => evolveHistory(previous, metricsPayload));
             setError(undefined);
           }
         } else if (!disposed) {
@@ -123,6 +157,7 @@ export function useOrchestratorState(): CommandCenterState {
             setSnapshot(packet.snapshot);
             if (packet.metrics) {
               setMetrics(packet.metrics);
+              setMetricsHistory((previous) => evolveHistory(previous, packet.metrics as OperatorMetrics));
             }
             setError(undefined);
           }
@@ -149,10 +184,11 @@ export function useOrchestratorState(): CommandCenterState {
       approvals: snapshot.approvals,
       chats: snapshot.chats,
       metrics,
+      metricsHistory,
       loading,
       error,
       resolveApproval
     }),
-    [snapshot, metrics, loading, error, resolveApproval]
+    [snapshot, metrics, metricsHistory, loading, error, resolveApproval]
   );
 }
