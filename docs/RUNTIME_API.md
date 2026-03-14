@@ -29,6 +29,18 @@ Environment overrides:
     - chats
     - recent events
 
+- `GET /api/files/tree?path=<relative-directory>`
+  - Returns a bounded-depth directory tree rooted at workspace path.
+
+- `GET /api/files/read?path=<relative-file>`
+  - Returns UTF-8 file contents for a workspace-relative file path.
+
+- `POST /api/files/write`
+  - Body:
+    - `path` (workspace-relative file path)
+    - `content` (string)
+  - Writes UTF-8 file content into workspace file.
+
 - `GET /api/metrics`
   - Returns projected reliability and efficiency metrics:
     - workflow totals and completion rate

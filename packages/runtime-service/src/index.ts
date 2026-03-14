@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join, normalize, resolve } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { InMemoryEventStore } from "@ade/event-store";
 import { OrchestratorService } from "@ade/orchestrator-core";
@@ -10,6 +12,7 @@ import { seedAgents, seedMessages, seedRelationships, seedWorkflow } from "./see
 const HOST = process.env.ADE_RUNTIME_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.ADE_RUNTIME_PORT ?? 8787);
 const WORKFLOW_TICK_MS = Number(process.env.ADE_WORKFLOW_TICK_MS ?? 2500);
+const WORKSPACE_ROOT = resolve(process.env.ADE_WORKSPACE_ROOT ?? "/workspaces/ADE_dev");
 
 const eventStore = new InMemoryEventStore();
 const projections = new RuntimeProjectionStore();
@@ -87,6 +90,55 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
+function resolveWorkspacePath(inputPath: string): string {
+  const sanitized = inputPath.trim().replace(/^\/+/, "");
+  const target = resolve(join(WORKSPACE_ROOT, normalize(sanitized)));
+  if (!target.startsWith(WORKSPACE_ROOT)) {
+    throw new Error("Path escapes workspace root");
+  }
+  return target;
+}
+
+interface WorkspaceNode {
+  name: string;
+  path: string;
+  kind: "file" | "directory";
+  children?: WorkspaceNode[];
+}
+
+async function buildTree(targetPath: string, relativePath = "", depth = 0): Promise<WorkspaceNode[]> {
+  if (depth > 3) {
+    return [];
+  }
+
+  const entries = await readdir(targetPath, { withFileTypes: true });
+  const sorted = entries
+    .filter((entry) => !entry.name.startsWith("."))
+    .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
+
+  const nodes: WorkspaceNode[] = [];
+
+  for (const entry of sorted) {
+    const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      nodes.push({
+        name: entry.name,
+        path: entryRelativePath,
+        kind: "directory",
+        children: await buildTree(join(targetPath, entry.name), entryRelativePath, depth + 1)
+      });
+    } else {
+      nodes.push({
+        name: entry.name,
+        path: entryRelativePath,
+        kind: "file"
+      });
+    }
+  }
+
+  return nodes;
+}
+
 const server = createServer(async (req, res) => {
   const method = req.method ?? "GET";
   const url = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
@@ -99,6 +151,63 @@ const server = createServer(async (req, res) => {
   if (method === "GET" && url.pathname === "/api/snapshot") {
     sendJson(res, 200, projections.snapshot(eventStore.query({ limit: 500 })));
     return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/files/tree") {
+    const requestedPath = url.searchParams.get("path") ?? "";
+    try {
+      const target = resolveWorkspacePath(requestedPath);
+      const targetStat = await stat(target);
+      if (!targetStat.isDirectory()) {
+        sendJson(res, 400, { error: "path must be a directory" });
+        return;
+      }
+      const tree = await buildTree(target, requestedPath.replace(/^\/+/, ""));
+      sendJson(res, 200, { root: requestedPath || ".", tree });
+      return;
+    } catch (error) {
+      sendJson(res, 400, { error: (error as Error).message });
+      return;
+    }
+  }
+
+  if (method === "GET" && url.pathname === "/api/files/read") {
+    const requestedPath = url.searchParams.get("path");
+    if (!requestedPath) {
+      sendJson(res, 400, { error: "path query parameter is required" });
+      return;
+    }
+    try {
+      const target = resolveWorkspacePath(requestedPath);
+      const targetStat = await stat(target);
+      if (!targetStat.isFile()) {
+        sendJson(res, 400, { error: "path must be a file" });
+        return;
+      }
+      const content = await readFile(target, "utf8");
+      sendJson(res, 200, { path: requestedPath, content });
+      return;
+    } catch (error) {
+      sendJson(res, 400, { error: (error as Error).message });
+      return;
+    }
+  }
+
+  if (method === "POST" && url.pathname === "/api/files/write") {
+    const body = (await readBody(req)) as { path?: string; content?: string };
+    if (!body.path || typeof body.content !== "string") {
+      sendJson(res, 400, { error: "path and content are required" });
+      return;
+    }
+    try {
+      const target = resolveWorkspacePath(body.path);
+      await writeFile(target, body.content, "utf8");
+      sendJson(res, 200, { ok: true, path: body.path });
+      return;
+    } catch (error) {
+      sendJson(res, 400, { error: (error as Error).message });
+      return;
+    }
   }
 
   if (method === "GET" && url.pathname === "/api/metrics") {
