@@ -81,3 +81,25 @@ export const mockChats: Record<string, MessageEnvelope[]> = {
     }
   ]
 };
+
+export const mockMetrics = {
+  workflowTotals: {
+    running: 1,
+    paused: 0,
+    completed: 0,
+    failed: 0,
+    total: 1,
+    completionRate: 0
+  },
+  reliability: {
+    retryEvents: 0,
+    escalationEvents: 0,
+    approvalInterventions: 0,
+    pendingApprovals: 1
+  },
+  efficiency: {
+    totalTokenCost: 0,
+    totalCostUsd: 0,
+    meanWorkflowDurationMs: 0
+  }
+};

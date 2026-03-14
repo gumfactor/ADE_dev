@@ -1,12 +1,35 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Agent, AgentRelationship, ApprovalRequest, MessageEnvelope } from "@ade/types";
-import { mockAgents, mockApprovals, mockChats, mockRelationships } from "./mockState.js";
+import { mockAgents, mockApprovals, mockChats, mockMetrics, mockRelationships } from "./mockState.js";
+
+export interface OperatorMetrics {
+  workflowTotals: {
+    running: number;
+    paused: number;
+    completed: number;
+    failed: number;
+    total: number;
+    completionRate: number;
+  };
+  reliability: {
+    retryEvents: number;
+    escalationEvents: number;
+    approvalInterventions: number;
+    pendingApprovals: number;
+  };
+  efficiency: {
+    totalTokenCost: number;
+    totalCostUsd: number;
+    meanWorkflowDurationMs: number;
+  };
+}
 
 export interface CommandCenterState {
   agents: Agent[];
   relationships: AgentRelationship[];
   approvals: ApprovalRequest[];
   chats: Record<string, MessageEnvelope[]>;
+  metrics: OperatorMetrics;
   loading: boolean;
   error?: string;
   resolveApproval: (approvalId: string, resolution: "approved" | "rejected") => Promise<void>;
@@ -19,6 +42,11 @@ interface SnapshotPayload {
   chats: Record<string, MessageEnvelope[]>;
 }
 
+interface SnapshotPacket {
+  snapshot?: SnapshotPayload;
+  metrics?: OperatorMetrics;
+}
+
 const DEFAULT_RUNTIME_BASE_URL = "http://127.0.0.1:8787";
 
 export function useOrchestratorState(): CommandCenterState {
@@ -28,6 +56,7 @@ export function useOrchestratorState(): CommandCenterState {
     approvals: mockApprovals,
     chats: mockChats
   });
+  const [metrics, setMetrics] = useState<OperatorMetrics>(mockMetrics);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>(undefined);
 
@@ -46,9 +75,15 @@ export function useOrchestratorState(): CommandCenterState {
     if (!fresh.ok) {
       throw new Error("Failed to refresh snapshot after approval update");
     }
+    const metricsResponse = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/metrics`);
+    if (!metricsResponse.ok) {
+      throw new Error("Failed to refresh metrics after approval update");
+    }
 
     const payload = (await fresh.json()) as SnapshotPayload;
+    const updatedMetrics = (await metricsResponse.json()) as OperatorMetrics;
     setSnapshot(payload);
+    setMetrics(updatedMetrics);
   }, []);
 
   useEffect(() => {
@@ -58,10 +93,13 @@ export function useOrchestratorState(): CommandCenterState {
     async function bootstrap(): Promise<void> {
       try {
         const response = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/snapshot`);
+        const metricsResponse = await fetch(`${DEFAULT_RUNTIME_BASE_URL}/api/metrics`);
         if (response.ok) {
           const payload = (await response.json()) as SnapshotPayload;
+          const metricsPayload = metricsResponse.ok ? ((await metricsResponse.json()) as OperatorMetrics) : mockMetrics;
           if (!disposed) {
             setSnapshot(payload);
+            setMetrics(metricsPayload);
             setError(undefined);
           }
         } else if (!disposed) {
@@ -80,9 +118,12 @@ export function useOrchestratorState(): CommandCenterState {
       try {
         socket = new WebSocket(`${DEFAULT_RUNTIME_BASE_URL.replace("http", "ws")}/ws`);
         socket.onmessage = (event) => {
-          const packet = JSON.parse(event.data as string) as { snapshot?: SnapshotPayload };
+          const packet = JSON.parse(event.data as string) as SnapshotPacket;
           if (!disposed && packet.snapshot) {
             setSnapshot(packet.snapshot);
+            if (packet.metrics) {
+              setMetrics(packet.metrics);
+            }
             setError(undefined);
           }
         };
@@ -107,10 +148,11 @@ export function useOrchestratorState(): CommandCenterState {
       relationships: snapshot.relationships,
       approvals: snapshot.approvals,
       chats: snapshot.chats,
+      metrics,
       loading,
       error,
       resolveApproval
     }),
-    [snapshot, loading, error, resolveApproval]
+    [snapshot, metrics, loading, error, resolveApproval]
   );
 }

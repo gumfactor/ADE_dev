@@ -1,11 +1,12 @@
 import { ChatMultiplexer } from "../components/ChatMultiplexer.js";
 import { InterventionRail } from "../components/InterventionRail.js";
 import { MissionGrid } from "../components/MissionGrid.js";
+import { OperatorMetricsPanel } from "../components/OperatorMetricsPanel.js";
 import { RelationshipGraph } from "../components/RelationshipGraph.js";
 import { useOrchestratorState } from "../hooks/useOrchestratorState.js";
 
 export function CommandCenterLayout(): JSX.Element {
-  const { agents, approvals, relationships, chats, loading, error, resolveApproval } = useOrchestratorState();
+  const { agents, approvals, relationships, chats, metrics, loading, error, resolveApproval } = useOrchestratorState();
 
   return (
     <main
@@ -36,6 +37,10 @@ export function CommandCenterLayout(): JSX.Element {
             void resolveApproval(approvalId, resolution);
           }}
         />
+      </section>
+
+      <section style={{ marginBottom: 14 }}>
+        <OperatorMetricsPanel metrics={metrics} />
       </section>
 
       <section style={{ display: "grid", gridTemplateColumns: "1.2fr 1.8fr", gap: 14 }}>
