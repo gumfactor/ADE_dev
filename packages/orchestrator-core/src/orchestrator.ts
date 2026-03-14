@@ -10,6 +10,7 @@ import {
 import { ApprovalEngine } from "./approval-engine.js";
 import { MessageBus } from "./messaging.js";
 import { DependencyGraphScheduler } from "./scheduler.js";
+import { executeStage } from "./stage-executors.js";
 import { AgentStateMachine } from "./state-machine.js";
 
 interface EventSink {
@@ -177,6 +178,21 @@ export class OrchestratorService {
     }
 
     const stageId = execution.currentStageId;
+    const stage = definition.stages.find((candidate) => candidate.id === stageId);
+    if (!stage) {
+      execution.status = "failed";
+      execution.lastTransitionAt = new Date().toISOString();
+      this.emit("workflow.stage_advanced", execution.id, "workflow", {
+        workflowId: definition.id,
+        stageId,
+        result: "failed",
+        reason: "stage_missing_from_definition"
+      });
+      return execution;
+    }
+
+    const assignedAgentId = execution.stageAgentAssignments[stage.id];
+    const assignedAgent = assignedAgentId ? this.agents.get(assignedAgentId) : undefined;
 
     if (forceFailCurrentStage) {
       const attempt = (execution.retryCountByStage[stageId] ?? 0) + 1;
@@ -200,6 +216,45 @@ export class OrchestratorService {
         stageId,
         result: "escalated",
         escalateToRole: definition.escalationPolicy.escalateToRole
+      });
+      return execution;
+    }
+
+    const stageResult = executeStage({ stage, execution, assignedAgent });
+    this.emit("tool.executed", execution.id, "workflow", {
+      workflowId: definition.id,
+      stageId: stage.id,
+      stagePrimitive: stage.primitive,
+      summary: stageResult.summary,
+      assignedAgentId,
+      toolName: stageResult.toolName,
+      success: stageResult.success
+    });
+
+    if (!stageResult.success) {
+      const attempt = (execution.retryCountByStage[stageId] ?? 0) + 1;
+      execution.retryCountByStage[stageId] = attempt;
+      execution.lastTransitionAt = new Date().toISOString();
+
+      if (attempt <= definition.retryPolicy.maxRetries) {
+        this.emit("workflow.stage_advanced", execution.id, "workflow", {
+          workflowId: definition.id,
+          stageId,
+          result: "retrying",
+          attempt,
+          reason: stageResult.summary
+        });
+        return execution;
+      }
+
+      execution.status = "paused";
+      execution.escalationStageId = stageId;
+      this.emit("workflow.stage_advanced", execution.id, "workflow", {
+        workflowId: definition.id,
+        stageId,
+        result: "escalated",
+        escalateToRole: definition.escalationPolicy.escalateToRole,
+        reason: stageResult.summary
       });
       return execution;
     }
@@ -296,7 +351,21 @@ export class OrchestratorService {
       version: 1,
       actor: { id: "orchestrator", type: "system" },
       payload,
-      metadata: { workspaceId: "default" }
+      metadata: {
+        workspaceId: "default",
+        tokenCost:
+          typeof payload === "object" && payload !== null && "tokenCost" in payload && typeof payload.tokenCost === "number"
+            ? payload.tokenCost
+            : undefined,
+        costUsd:
+          typeof payload === "object" && payload !== null && "costUsd" in payload && typeof payload.costUsd === "number"
+            ? payload.costUsd
+            : undefined,
+        wallClockMs:
+          typeof payload === "object" && payload !== null && "wallClockMs" in payload && typeof payload.wallClockMs === "number"
+            ? payload.wallClockMs
+            : undefined
+      }
     };
     this.eventSink.append(event);
   }
