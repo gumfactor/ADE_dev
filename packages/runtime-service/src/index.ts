@@ -4,6 +4,7 @@ import { InMemoryEventStore } from "@ade/event-store";
 import { OrchestratorService } from "@ade/orchestrator-core";
 import type { DomainEvent, MessageEnvelope, StageFailureMode } from "@ade/types";
 import { RuntimeProjectionStore } from "./projections.js";
+import { RuntimeRegistryStore } from "./registry.js";
 import { seedAgents, seedMessages, seedRelationships, seedWorkflow } from "./seed.js";
 
 const HOST = process.env.ADE_RUNTIME_HOST ?? "127.0.0.1";
@@ -12,6 +13,7 @@ const WORKFLOW_TICK_MS = Number(process.env.ADE_WORKFLOW_TICK_MS ?? 2500);
 
 const eventStore = new InMemoryEventStore();
 const projections = new RuntimeProjectionStore();
+const registry = new RuntimeRegistryStore();
 
 const sockets = new Set<import("ws").WebSocket>();
 
@@ -105,6 +107,38 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (method === "GET" && url.pathname === "/api/registry/tools") {
+    sendJson(res, 200, { tools: registry.listTools() });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/registry/mcps") {
+    sendJson(res, 200, { mcps: registry.listMcps() });
+    return;
+  }
+
+  const toolToggleMatch = url.pathname.match(/^\/api\/registry\/tools\/([^/]+)\/enabled$/);
+  if (method === "POST" && toolToggleMatch) {
+    const toolId = toolToggleMatch[1];
+    if (!toolId) {
+      sendJson(res, 400, { error: "tool id is required" });
+      return;
+    }
+    const body = (await readBody(req)) as { enabled?: boolean };
+    if (typeof body.enabled !== "boolean") {
+      sendJson(res, 400, { error: "enabled boolean is required" });
+      return;
+    }
+    try {
+      const tool = registry.setToolEnabled(toolId, body.enabled);
+      sendJson(res, 200, { tool });
+      return;
+    } catch (error) {
+      sendJson(res, 404, { error: (error as Error).message });
+      return;
+    }
+  }
+
   if (method === "POST" && url.pathname === "/api/workflows/tick-all") {
     const executions = orchestrator.tickAllRunningWorkflows();
     refreshProjections(orchestrator);
@@ -162,6 +196,21 @@ const server = createServer(async (req, res) => {
     const body = (await readBody(req)) as { toolName?: string; scope?: "single_file" | "workspace" | "repo" | "system" };
     const toolName = body.toolName ?? "filesystem.write";
     const scope = body.scope ?? "workspace";
+
+    const tool = registry.getTool(toolName);
+    if (!tool) {
+      sendJson(res, 404, { error: `tool not found in registry: ${toolName}` });
+      return;
+    }
+    if (!tool.enabled) {
+      sendJson(res, 403, { error: `tool is disabled by policy: ${toolName}` });
+      return;
+    }
+    if (!tool.scopes.includes(scope)) {
+      sendJson(res, 403, { error: `tool scope ${scope} is not allowed for ${toolName}` });
+      return;
+    }
+
     const request = orchestrator.evaluateApproval(toolName, scope);
     refreshProjections(orchestrator);
     sendJson(res, 200, { request });

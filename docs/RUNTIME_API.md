@@ -37,11 +37,23 @@ Environment overrides:
     - aggregate token/cost totals
     - mean workflow completion duration
 
+- `GET /api/registry/tools`
+  - Lists tool registry entries including trust level, version, scopes, and enablement.
+
+- `POST /api/registry/tools/{toolId}/enabled`
+  - Body:
+    - `enabled` (boolean)
+  - Enables/disables a tool entry.
+
+- `GET /api/registry/mcps`
+  - Lists MCP registry entries and endpoints.
+
 - `POST /api/approvals/evaluate`
   - Body:
     - `toolName`
     - `scope` (`single_file` | `workspace` | `repo` | `system`)
   - Creates/returns an approval request when required by policy.
+  - Tool policy guardrails are enforced first: tool must be registered, enabled, and authorized for the requested scope.
 
 - `POST /api/approvals/{approvalId}/resolve`
   - Body:
