@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface OperatorMetrics {
   workflowTotals: {
@@ -63,6 +63,42 @@ const ALERT_STYLE: Record<AlertSeverity, { border: string; background: string; t
     badge: "#8fd8ff"
   }
 };
+
+const ACK_STORAGE_KEY = "ade.operator.alerts.acknowledged";
+const MUTE_STORAGE_KEY = "ade.operator.alerts.muted";
+
+function loadAlertState(storageKey: string): Record<string, true> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    const normalized: Record<string, true> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value) {
+        normalized[key] = true;
+      }
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+function persistAlertState(storageKey: string, state: Record<string, true>): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(state));
+  } catch {
+    // localStorage failures should not break command center rendering.
+  }
+}
 
 function renderSparkline(points: number[], color: string): JSX.Element {
   const width = 120;
@@ -158,8 +194,16 @@ export function OperatorMetricsPanel({ metrics, history }: OperatorMetricsPanelP
     return next;
   }, [metrics]);
 
-  const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Record<string, true>>({});
-  const [mutedAlerts, setMutedAlerts] = useState<Record<string, true>>({});
+  const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Record<string, true>>(() => loadAlertState(ACK_STORAGE_KEY));
+  const [mutedAlerts, setMutedAlerts] = useState<Record<string, true>>(() => loadAlertState(MUTE_STORAGE_KEY));
+
+  useEffect(() => {
+    persistAlertState(ACK_STORAGE_KEY, acknowledgedAlerts);
+  }, [acknowledgedAlerts]);
+
+  useEffect(() => {
+    persistAlertState(MUTE_STORAGE_KEY, mutedAlerts);
+  }, [mutedAlerts]);
 
   const visibleAlerts = alerts.filter((alert) => !mutedAlerts[alert.id]);
   const mutedCount = alerts.filter((alert) => mutedAlerts[alert.id]).length;
@@ -177,6 +221,11 @@ export function OperatorMetricsPanel({ metrics, history }: OperatorMetricsPanelP
       }
       return { ...previous, [alertId]: true };
     });
+  };
+
+  const clearAllTriageState = (): void => {
+    setAcknowledgedAlerts({});
+    setMutedAlerts({});
   };
 
   return (
@@ -261,6 +310,25 @@ export function OperatorMetricsPanel({ metrics, history }: OperatorMetricsPanelP
           {mutedCount} alert{mutedCount > 1 ? "s" : ""} muted.
         </p>
       ) : null}
+      {(Object.keys(acknowledgedAlerts).length > 0 || Object.keys(mutedAlerts).length > 0) && (
+        <div>
+          <button
+            type="button"
+            onClick={clearAllTriageState}
+            style={{
+              border: "1px solid rgba(255,255,255,0.28)",
+              borderRadius: 8,
+              background: "rgba(18, 38, 54, 0.45)",
+              color: "#e7f4ff",
+              padding: "4px 10px",
+              cursor: "pointer",
+              fontSize: 11
+            }}
+          >
+            Reset alert triage state
+          </button>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
         {metricCard(
           "Workflow Completion",
