@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { AgentsTab } from "../components/AgentsTab.js";
+import { WorkflowPipelineViz } from "../components/WorkflowPipelineViz.js";
 import { InterventionRail } from "../components/InterventionRail.js";
+import { MetricsTab } from "../components/MetricsTab.js";
 import { MissionGrid } from "../components/MissionGrid.js";
-import { OperatorMetricsPanel } from "../components/OperatorMetricsPanel.js";
 import { RelationshipGraph } from "../components/RelationshipGraph.js";
 import { RuntimeControlsPanel } from "../components/RuntimeControlsPanel.js";
-import { WorkflowPipelineViz } from "../components/WorkflowPipelineViz.js";
+import { WorkflowsTab } from "../components/WorkflowsTab.js";
 import { useOrchestratorState } from "../hooks/useOrchestratorState.js";
 import type { OperatorMetrics, MetricsHistory } from "../hooks/useOrchestratorState.js";
 import type { Agent, AgentRelationship, ApprovalRequest, WorkflowDefinition, WorkflowExecution } from "@ade/types";
@@ -191,8 +193,16 @@ export function CommandCenterLayout(): JSX.Element {
     error,
     resolveApproval,
     tickAllWorkflows,
+    startWorkflow,
+    pauseWorkflow,
+    resumeWorkflow,
+    cancelWorkflow,
+    updateStageAssignment,
     setStageFailureMode,
-    toggleToolEnabled
+    toggleToolEnabled,
+    getAgentDetail,
+    getMetricDetail,
+    chatWithAgent
   } = useOrchestratorState();
 
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -348,7 +358,18 @@ export function CommandCenterLayout(): JSX.Element {
             />
           )}
           {activeTab === "workflows" && (
-            <WorkflowPipelineViz workflows={workflows} workflowDefinitions={workflowDefinitions} />
+            <WorkflowsTab
+              workflows={workflows}
+              workflowDefinitions={workflowDefinitions}
+              agents={agents}
+              onStart={(workflowId) => startWorkflow(workflowId)}
+              onPause={(id) => pauseWorkflow(id)}
+              onResume={(id) => resumeWorkflow(id)}
+              onCancel={(id) => cancelWorkflow(id)}
+              onTick={tickAllWorkflows}
+              onSetFailureMode={(execId, stageId, mode) => setStageFailureMode(execId, stageId, mode)}
+              onUpdateAssignment={(execId, stageId, agentId) => updateStageAssignment(execId, stageId, agentId)}
+            />
           )}
           {activeTab === "approvals" && (
             <InterventionRail
@@ -357,14 +378,16 @@ export function CommandCenterLayout(): JSX.Element {
             />
           )}
           {activeTab === "agents" && (
-            <div style={{ display: "grid", gap: 20 }}>
-              <MissionGrid agents={agents} />
-              <RelationshipGraph agents={agents} relationships={relationships} />
-            </div>
+            <AgentsTab
+              agents={agents}
+              relationships={relationships}
+              getAgentDetail={getAgentDetail}
+              chatWithAgent={(agentId, text) => chatWithAgent(agentId, text)}
+            />
           )}
           {activeTab === "metrics" && (
             <div style={{ display: "grid", gap: 16 }}>
-              <OperatorMetricsPanel metrics={metrics} history={metricsHistory} />
+              <MetricsTab metrics={metrics} metricsHistory={metricsHistory} getMetricDetail={getMetricDetail} />
               <RuntimeControlsPanel
                 workflows={workflows}
                 onTickAll={tickAllWorkflows}

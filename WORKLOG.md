@@ -1,5 +1,32 @@
 # Work Log
 
+## 2026-03-15 - Phase 2/3/4: Interactive Workflows, Agents, and Metrics UI
+
+### Objective
+
+Convert tab surfaces from passive monitoring into executable operator interfaces with drill-down and control actions.
+
+### Implemented
+
+- Built a dedicated interactive workflows surface:
+  - workflow selection list
+  - detail pane with lifecycle actions (start/pause/resume/cancel/tick)
+  - stage-level failure mode controls
+  - stage-to-agent assignment controls
+- Built an interactive agents surface:
+  - agent roster and focused detail pane
+  - mission/status/budget and relationship context
+  - per-agent chat interaction panel backed by runtime chat APIs
+- Built an interactive metrics surface:
+  - clickable metric tiles with sparkline context
+  - drill-down panel for metric-specific detail responses
+- Rewired command-center tab routing to use these new interactive components.
+
+### Notes
+
+- Existing mission-control visuals remain available where useful, but the primary workflows/agents/metrics paths are now action-oriented.
+- This establishes the UI side of operator interactivity; next phases can deepen backend execution semantics and richer task planning surfaces.
+
 ## 2026-03-14 - Phase 1: Command Contracts and Executable Workflow Commands
 
 ### Objective

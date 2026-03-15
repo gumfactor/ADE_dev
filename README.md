@@ -241,6 +241,12 @@ Command-driven control is now available for workflow operations:
 - Unified `POST /api/commands` endpoint for start/pause/resume/cancel/tick/failure-mode/assignment actions.
 - Command lifecycle events emitted for auditability: `command.accepted`, `command.applied`, `command.rejected`.
 
+Interactive operator surfaces are now in place for core tabs:
+
+- Workflows tab supports selection, detail drill-down, and execution controls.
+- Agents tab supports per-agent detail and direct operator-to-agent chat.
+- Metrics tab supports clickable drill-down detail views.
+
 Execution logs:
 
 - Project change log: `CHANGELOG.md`
